@@ -9,7 +9,7 @@ export const setGlobalApiKey = (key: string) => {
 
 const getAI = (specificKey?: string) => {
     let key = specificKey || globalApiKey;
-    
+
     if (!key) {
         try {
             if (typeof process !== 'undefined' && process.env) {
@@ -30,16 +30,16 @@ const getAI = (specificKey?: string) => {
 
 // Helper to remove data:image/png;base64, prefix
 const cleanBase64 = (dataUrl: string): string => {
-  if (!dataUrl.includes(',')) return dataUrl;
-  return dataUrl.split(',')[1];
+    if (!dataUrl.includes(',')) return dataUrl;
+    return dataUrl.split(',')[1];
 };
 
 const getMimeType = (dataUrl: string): string => {
-  const match = dataUrl.match(/data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+).*,.*/);
-  if (match && match.length > 1) {
-    return match[1];
-  }
-  return 'image/png'; // Default
+    const match = dataUrl.match(/data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+).*,.*/);
+    if (match && match.length > 1) {
+        return match[1];
+    }
+    return 'image/png'; // Default
 };
 
 /**
@@ -70,7 +70,7 @@ const processImageForGemini = (dataUrl: string): Promise<string> => {
             canvas.width = width;
             canvas.height = height;
             const ctx = canvas.getContext('2d');
-            
+
             if (!ctx) {
                 resolve(dataUrl); // Fallback if context fails
                 return;
@@ -81,17 +81,17 @@ const processImageForGemini = (dataUrl: string): Promise<string> => {
             ctx.fillStyle = "#FFFFFF";
             ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
-            
+
             // 0.9 quality is good balance
             const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
             resolve(optimizedDataUrl);
         };
-        
+
         img.onerror = () => {
             console.warn("Failed to optimize image, sending original.");
             resolve(dataUrl);
         };
-        
+
         img.src = dataUrl;
     });
 };
@@ -101,19 +101,19 @@ const getClosestAspectRatio = (width: number, height: number): string => {
     const ratio = width / height;
     const targets = [
         { id: '1:1', val: 1.0 },
-        { id: '4:3', val: 4/3 },
-        { id: '3:4', val: 3/4 },
-        { id: '16:9', val: 16/9 },
-        { id: '9:16', val: 9/16 },
+        { id: '4:3', val: 4 / 3 },
+        { id: '3:4', val: 3 / 4 },
+        { id: '16:9', val: 16 / 9 },
+        { id: '9:16', val: 9 / 16 },
         { id: '4:5', val: 0.8 },
         { id: '5:4', val: 1.25 }
     ];
-    
+
     // Find the closest supported ratio
-    const closest = targets.reduce((prev, curr) => 
+    const closest = targets.reduce((prev, curr) =>
         Math.abs(curr.val - ratio) < Math.abs(prev.val - ratio) ? curr : prev
     );
-    
+
     return closest.id;
 };
 
@@ -145,21 +145,21 @@ const handleApiError = (error: any) => {
     if (!msg && error.error) {
         msg = error.error.message || '';
     }
-    
+
     // Check status code or message content
     if (
-        msg.includes("429") || 
-        details.includes('"code":429') || 
+        msg.includes("429") ||
+        details.includes('"code":429') ||
         error.status === 429 ||
         error?.error?.code === 429 ||
         details.includes('RESOURCE_EXHAUSTED')
     ) {
         return new Error("Hết Quota (429): Quá giới hạn request.");
     }
-    
+
     if (msg.includes("403") || details.includes('"code":403')) return new Error("Lỗi Quyền (403): Kiểm tra API Key hoặc Billing.");
     if (msg.includes("400") || details.includes('"code":400')) return new Error("Lỗi Request (400): Ảnh quá lớn hoặc lỗi định dạng. Hệ thống đã tự động fix, vui lòng thử lại.");
-    
+
     return new Error(msg || "Lỗi xử lý API không xác định.");
 };
 
@@ -176,17 +176,17 @@ export const createChatSession = () => {
 
 // --- IMAGE EDITING (Gemini 3.0 Pro Image Preview) ---
 export const editImage = async (
-    base64OrDataUrl: string, 
-    prompt: string, 
+    base64OrDataUrl: string,
+    prompt: string,
     guideImageBase64OrDataUrl?: string
 ) => {
     const ai = getAI();
-    
+
     // Optimize inputs
     const optimizedMain = await processImageForGemini(base64OrDataUrl);
     let base64Data = cleanBase64(optimizedMain);
     let mimeType = getMimeType(optimizedMain);
-    
+
     const parts: any[] = [
         { inlineData: { data: base64Data, mimeType: mimeType } }
     ];
@@ -224,7 +224,7 @@ export const editImage = async (
                 }
             }
         }
-        
+
         return { text: resultText, imageBase64: resultImageBase64 };
     } catch (error: any) {
         console.error("Edit Image Error:", error.message || error);
@@ -274,9 +274,9 @@ export const thinkingChat = async (prompt: string) => {
 
 // --- PROMPT SUGGESTIONS / BREAKDOWN (Gemini 2.5 Flash) ---
 export const generatePromptSuggestions = async (
-    basePrompt: string, 
-    count: number, 
-    mediaB64?: string, 
+    basePrompt: string,
+    count: number,
+    mediaB64?: string,
     mimeType?: string,
     signal?: AbortSignal
 ) => {
@@ -291,7 +291,7 @@ export const generatePromptSuggestions = async (
             // --- IMAGE + TEXT LOGIC ---
             // If image is present, the prompt must analyze the image style/content 
             // AND apply the text modifications (gender, scene, etc.)
-            
+
             // Optimize image just in case
             const rawUrl = `data:${mimeType};base64,${mediaB64}`;
             const optimized = await processImageForGemini(rawUrl);
@@ -317,7 +317,7 @@ export const generatePromptSuggestions = async (
             OUTPUT FORMAT:
             Return ONLY a JSON array of strings. Each string is a full, detailed prompt.
             `;
-            
+
             parts.push({ text: `Generate ${count} variations based on this image and this instruction: "${basePrompt}"` });
 
         } else {
@@ -368,17 +368,99 @@ export const generateDistinctPrompts = async (
     baseIdea: string,
     count: number,
     gender: GenderOption,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    refImageB64?: string,
+    refMimeType?: string
 ): Promise<string[]> => {
     const ai = getAI();
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-    const genderInstruction = gender === 'MALE' 
+    const genderInstruction = gender === 'MALE'
         ? "CONSTRAINT: ALL subjects must be MALE."
-        : gender === 'FEMALE' 
+        : gender === 'FEMALE'
             ? "CONSTRAINT: ALL subjects must be FEMALE."
             : "If the idea implies diversity, include a mix of genders/ages as requested.";
 
+    const parts: any[] = [];
+
+    // --- IMAGE-AWARE MODE: Send reference image for AI to analyze ---
+    if (refImageB64 && refMimeType) {
+        const rawDataUrl = `data:${refMimeType};base64,${refImageB64}`;
+        const optimized = await processImageForGemini(rawDataUrl);
+        parts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
+
+        const systemPrompt = `
+            You are an Expert Visual Variation Director.
+            
+            CONTEXT:
+            - You are given a REFERENCE IMAGE (the uploaded image) and a USER INSTRUCTION.
+            - Your job: Create ${count} DISTINCT variation prompts that MODIFY the reference image according to the user's instruction.
+            
+            USER INSTRUCTION: "${baseIdea}"
+            
+            CRITICAL RULES — INTELLIGENT MODIFICATION:
+            1. **FIRST**: Describe the reference image in detail (subject, pose, clothes, background, lighting, style).
+            2. **THEN**: For each variation, ONLY change what the user explicitly asks to change. Keep EVERYTHING ELSE identical.
+            
+            MODIFICATION INTELLIGENCE:
+            - If user says "old / young / age variations" → Keep the SAME person identity, pose, clothes, background. ONLY change apparent age.
+            - If user says "red dress / suit / casual" → Keep the SAME person, pose, background. ONLY change outfit.
+            - If user says "in forest / beach / city" → Keep the SAME person, pose, outfit. ONLY change background/environment.
+            - If user says "angry / happy / sad" → Keep EVERYTHING. ONLY change facial expression.
+            - If user says "blonde hair / short hair" → Keep EVERYTHING. ONLY change hair.
+            - If user mentions MULTIPLE changes (e.g. "old version in winter") → Apply ALL mentioned changes, keep the rest.
+            - If user gives a GENERAL creative idea (e.g. "variations") → Create diverse but recognizable versions of the same subject.
+            
+            EACH PROMPT MUST:
+            1. Start by describing the PRESERVED elements from the reference (to anchor the generation).
+            2. Then clearly specify the MODIFIED element(s).
+            3. Include technical quality tags: lighting style, camera angle, resolution.
+            4. Be detailed enough for standalone image generation (AI generating from this prompt should produce something very close to the reference + modifications).
+            
+            ${genderInstruction}
+            
+            EXAMPLE:
+            Reference: Photo of a young Asian woman in a blue dress, standing in a garden, soft sunset lighting.
+            User: "tạo phiên bản già và trẻ" (create old and young versions)
+            Output:
+            [
+              "A teenage Asian girl (around 16 years old) with the same face structure, wearing the same blue dress, standing in the same garden with blooming flowers, soft golden sunset lighting, youthful energy, portrait photography, 8k, highly detailed skin texture.",
+              "An elderly Asian woman (around 65 years old) with the same face structure but with graceful wrinkles and silver-white hair, wearing the same blue dress, standing in the same garden with blooming flowers, soft golden sunset lighting, dignified and warm expression, portrait photography, 8k, highly detailed."
+            ]
+            
+            Return ONLY a JSON array of ${count} prompt strings.
+        `;
+
+        parts.push({ text: `Analyze this reference image and create ${count} variation(s) based on: "${baseIdea}"` });
+
+        try {
+            const requestPromise = ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: { parts },
+                config: {
+                    systemInstruction: systemPrompt,
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING }
+                    }
+                }
+            });
+
+            const response = await waitFor(requestPromise, signal) as GenerateContentResponse;
+            const text = response.text;
+            if (!text) return Array(count).fill(baseIdea);
+            const parsed = JSON.parse(text) as string[];
+            while (parsed.length < count) parsed.push(parsed[0] || baseIdea);
+            return parsed.slice(0, count);
+        } catch (error) {
+            console.error("Image-Aware Prompt Gen Error:", error);
+            if (handleApiError(error).message.includes("Quota")) throw handleApiError(error);
+            return Array(count).fill(baseIdea);
+        }
+    }
+
+    // --- TEXT-ONLY MODE (no reference image) ---
     const systemPrompt = `
         You are a Visual Prompt Engineer specializing in image generation.
         Your task: Transform the user's idea into ${count} DISTINCT, DETAILED, and HIGH-QUALITY visual prompts.
@@ -404,10 +486,12 @@ export const generateDistinctPrompts = async (
         Return ONLY a JSON array of strings.
     `;
 
+    parts.push({ text: `Idea: "${baseIdea}"` });
+
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: { parts: [{ text: `Idea: "${baseIdea}"` }] },
+            contents: { parts },
             config: {
                 systemInstruction: systemPrompt,
                 responseMimeType: "application/json",
@@ -417,12 +501,11 @@ export const generateDistinctPrompts = async (
                 }
             }
         });
-        
+
         const text = response.text;
         if (!text) return Array(count).fill(baseIdea);
         const parsed = JSON.parse(text) as string[];
-        
-        // Fill if not enough
+
         while (parsed.length < count) {
             parsed.push(parsed[0] || baseIdea);
         }
@@ -457,7 +540,7 @@ export const generateBatchVariation = async (
 
     try {
         const parts: any[] = [];
-        
+
         let styleRefIndex = 0;
         let faceRefIndex = 0;
         let mockupSourceIndex = 0;
@@ -473,7 +556,7 @@ export const generateBatchVariation = async (
                 // Reconstruct data url to optimize
                 const rawDataUrl = `data:${refMimeType};base64,${refImageB64}`;
                 const optimizedRef = await processImageForGemini(rawDataUrl);
-                
+
                 parts.push({ inlineData: { data: cleanBase64(optimizedRef), mimeType: getMimeType(optimizedRef) } });
                 styleRefIndex = currentIndex++;
             }
@@ -484,18 +567,18 @@ export const generateBatchVariation = async (
                 faceRefIndex = currentIndex++;
             }
         } else if (mode === 'MOCKUP') {
-             if (refImageB64 && refMimeType) {
-                 const rawDataUrl = `data:${refMimeType};base64,${refImageB64}`;
-                 const optimizedRef = await processImageForGemini(rawDataUrl);
-                 parts.push({ inlineData: { data: cleanBase64(optimizedRef), mimeType: getMimeType(optimizedRef) } });
-                 mockupSourceIndex = currentIndex++;
-             }
-             if (targetImageB64 && targetMimeType) {
-                 const rawDataUrl = `data:${targetMimeType};base64,${targetImageB64}`;
-                 const optimizedTarget = await processImageForGemini(rawDataUrl);
-                 parts.push({ inlineData: { data: cleanBase64(optimizedTarget), mimeType: getMimeType(optimizedTarget) } });
-                 mockupTargetIndex = currentIndex++;
-             }
+            if (refImageB64 && refMimeType) {
+                const rawDataUrl = `data:${refMimeType};base64,${refImageB64}`;
+                const optimizedRef = await processImageForGemini(rawDataUrl);
+                parts.push({ inlineData: { data: cleanBase64(optimizedRef), mimeType: getMimeType(optimizedRef) } });
+                mockupSourceIndex = currentIndex++;
+            }
+            if (targetImageB64 && targetMimeType) {
+                const rawDataUrl = `data:${targetMimeType};base64,${targetImageB64}`;
+                const optimizedTarget = await processImageForGemini(rawDataUrl);
+                parts.push({ inlineData: { data: cleanBase64(optimizedTarget), mimeType: getMimeType(optimizedTarget) } });
+                mockupTargetIndex = currentIndex++;
+            }
         }
 
         let finalPrompt = prompt;
@@ -503,56 +586,65 @@ export const generateBatchVariation = async (
         if (mode === 'TEXT_TO_IMAGE') {
             // DIRECT GENERATION LOGIC: Use raw prompt, no wrapper
             if (styleRefIndex > 0) {
-                 // IMAGE-TO-IMAGE / EDIT BY PROMPT logic
-                 finalPrompt = `TRANSFORM THIS IMAGE: ${prompt}. \n\nINSTRUCTION: Keep the composition but change the style/content according to the prompt strictly.`;
+                // IMAGE-TO-IMAGE / EDIT BY PROMPT logic
+                finalPrompt = `TRANSFORM THIS IMAGE: ${prompt}. \n\nINSTRUCTION: Keep the composition but change the style/content according to the prompt strictly.`;
             } else {
-                 finalPrompt = prompt;
+                finalPrompt = prompt;
             }
         } else if (mode === 'VARIATION') {
             let modifiers = [];
-            
+
             if (gender && gender !== 'ORIGINAL') {
-                modifiers.push(`CONSTRAINT: Subject MUST be ${gender}.`);
+                modifiers.push(`GENDER OVERRIDE: Subject MUST be ${gender}.`);
             }
             if (modifyBackground) {
-                modifiers.push(`CHANGE BACKGROUND: Adapt background to fit the new subject context (but keep lighting consistent).`);
+                modifiers.push(`BACKGROUND: CHANGE the background to fit the context described in the instruction.`);
             } else {
-                modifiers.push(`LOCK BACKGROUND: Keep the exact background/environment of the Reference Image. Do not change the scene.`);
+                modifiers.push(`BACKGROUND: PRESERVE the exact background/environment from the Reference Image unless the instruction explicitly asks to change it.`);
             }
 
-            // STRICT ANATOMY & STRUCTURE PROMPT
             const qualityControl = "FINAL CHECK: Ensure hands, fingers, and limbs are anatomically correct. No extra limbs. No distorted faces.";
-            
+
             if (styleRefIndex > 0) {
-                // LOCK & SWAP LOGIC (Strict)
                 finalPrompt = `
-                ROLE: Expert Image Editor & Compositor.
+                ROLE: Expert Image Editor specializing in precise, targeted modifications.
                 
                 INPUTS:
-                1. REFERENCE IMAGE (Image ${styleRefIndex}): This is the "Visual Template".
-                2. USER INSTRUCTION: "${prompt}". This is the "New Subject".
+                1. REFERENCE IMAGE (Image ${styleRefIndex}): The source image to modify.
+                2. USER INSTRUCTION: "${prompt}"
                 
-                TASK: "LOCK & SWAP"
-                1. **LOCK (DO NOT CHANGE)**: 
-                   - Camera Angle & Composition (Subject placement must match).
-                   - Lighting Direction & Quality (Shadows, highlights).
-                   - Color Palette & Grading.
-                   - Background Details (Furniture, walls, scenery).
-                2. **SWAP (CHANGE ONLY THIS)**:
-                   - Replace the person/subject in the Reference with: "${prompt}".
-                   - Keep the pose similar if possible, but adapt to the new subject's physiology.
-                   
+                TASK: "INTELLIGENT MODIFY"
+                
+                CORE PRINCIPLE: Only change what the user EXPLICITLY asks to change. Preserve EVERYTHING else.
+                
+                STEP 1 — ANALYZE the instruction:
+                - What specific attribute(s) does the user want changed? (age, outfit, hair, expression, background, style, etc.)
+                - What is NOT mentioned? → These must be PRESERVED exactly.
+                
+                STEP 2 — APPLY changes:
+                - PRESERVE: Same person identity, same face structure, same pose, same composition, same camera angle, same lighting quality, same color grading — UNLESS the instruction says otherwise.
+                - MODIFY: Apply ONLY the changes requested in the instruction.
+                
+                EXAMPLES OF CORRECT BEHAVIOR:
+                - Instruction: "older version" → Same person, same clothes, same background. Only add age (wrinkles, gray hair).
+                - Instruction: "wearing red dress" → Same person, same face, same background. Only change outfit to red dress.
+                - Instruction: "in a snowy forest" → Same person, same clothes, same pose. Only change background to snowy forest.
+                - Instruction: "smiling" → Same everything. Only change expression to a smile.
+                - Instruction: "cyberpunk style" → Same subject and composition. Change the overall aesthetic/style to cyberpunk.
+                
                 ${modifiers.join('\n')}
+                
+                ${faceRefIndex > 0 ? `FACE REFERENCE (Image ${faceRefIndex}): Use this face for the subject's face. Match the face structure and features from this reference.` : ''}
                 
                 ${qualityControl}
                 `;
             }
         }
-        
+
         parts.push({ text: finalPrompt });
 
         const imageConfig: any = { aspectRatio: aspectRatio };
-        if (model === 'gemini-3-pro-image-preview') imageConfig.imageSize = "1K"; 
+        if (model === 'gemini-3-pro-image-preview') imageConfig.imageSize = "1K";
 
         const requestPromise = ai.models.generateContent({
             model: model,
@@ -584,104 +676,104 @@ export const generateBatchVariation = async (
 // --- LOCALIZE AI SERVICES ---
 
 export const localizeImage = async (
-  imageDataUrl: string, 
-  targetLanguage: TargetLanguage,
-  correctionNotes?: string,
-  customPrompt?: string,
-  deepLocalize?: boolean
+    imageDataUrl: string,
+    targetLanguage: TargetLanguage,
+    correctionNotes?: string,
+    customPrompt?: string,
+    deepLocalize?: boolean
 ): Promise<string> => {
-  const ai = getAI();
-  
-  // FIX: Optimize image before processing to avoid 400 error
-  // Optimization logic might resize the image, changing dimensions.
-  // We need to calculate aspect ratio from the INPUT image (or the optimized one, ratio should remain similar).
-  
-  // Get Input Image Dimensions for Aspect Ratio
-  const tempImg = new Image();
-  tempImg.src = imageDataUrl;
-  await new Promise((resolve) => { tempImg.onload = resolve; });
-  const detectedRatio = getClosestAspectRatio(tempImg.width, tempImg.height);
-  
-  const optimizedImage = await processImageForGemini(imageDataUrl);
-  const base64Data = cleanBase64(optimizedImage);
-  const mimeType = getMimeType(optimizedImage);
+    const ai = getAI();
 
-  let prompt = deepLocalize 
-    ? `Localize deeply for ${targetLanguage} market. Translate text and ADAPT visuals (people, culture, currency) to match ${targetLanguage} demographics.`
-    : `Localize image. Translate all visible text to ${targetLanguage}. Maintain original font, color, background. Only replace text content.`;
+    // FIX: Optimize image before processing to avoid 400 error
+    // Optimization logic might resize the image, changing dimensions.
+    // We need to calculate aspect ratio from the INPUT image (or the optimized one, ratio should remain similar).
 
-  if (customPrompt && customPrompt.trim()) prompt += `\n\nUSER INSTRUCTIONS: ${customPrompt}`;
-  if (correctionNotes) prompt += `\n\nCORRECTION: Previous errors: ${correctionNotes}. Fix these.`;
+    // Get Input Image Dimensions for Aspect Ratio
+    const tempImg = new Image();
+    tempImg.src = imageDataUrl;
+    await new Promise((resolve) => { tempImg.onload = resolve; });
+    const detectedRatio = getClosestAspectRatio(tempImg.width, tempImg.height);
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-image-preview',
-      contents: {
-        parts: [
-          { inlineData: { data: base64Data, mimeType: mimeType } },
-          { text: prompt },
-        ],
-      },
-      // Pass the detected aspect ratio to ensure output matches input shape
-      config: { 
-          imageConfig: { 
-              imageSize: "2K",
-              aspectRatio: detectedRatio 
-          } 
-      }
-    });
+    const optimizedImage = await processImageForGemini(imageDataUrl);
+    const base64Data = cleanBase64(optimizedImage);
+    const mimeType = getMimeType(optimizedImage);
 
-    if (response.candidates && response.candidates[0].content.parts) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-      }
+    let prompt = deepLocalize
+        ? `Localize deeply for ${targetLanguage} market. Translate text and ADAPT visuals (people, culture, currency) to match ${targetLanguage} demographics.`
+        : `Localize image. Translate all visible text to ${targetLanguage}. Maintain original font, color, background. Only replace text content.`;
+
+    if (customPrompt && customPrompt.trim()) prompt += `\n\nUSER INSTRUCTIONS: ${customPrompt}`;
+    if (correctionNotes) prompt += `\n\nCORRECTION: Previous errors: ${correctionNotes}. Fix these.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents: {
+                parts: [
+                    { inlineData: { data: base64Data, mimeType: mimeType } },
+                    { text: prompt },
+                ],
+            },
+            // Pass the detected aspect ratio to ensure output matches input shape
+            config: {
+                imageConfig: {
+                    imageSize: "2K",
+                    aspectRatio: detectedRatio
+                }
+            }
+        });
+
+        if (response.candidates && response.candidates[0].content.parts) {
+            for (const part of response.candidates[0].content.parts) {
+                if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+            }
+        }
+        throw new Error("No image data found");
+    } catch (error) {
+        console.error("Gemini API Error:", error);
+        throw handleApiError(error);
     }
-    throw new Error("No image data found");
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    throw handleApiError(error);
-  }
 };
 
 export const checkSpelling = async (
-  imageDataUrl: string,
-  targetLanguage: TargetLanguage
+    imageDataUrl: string,
+    targetLanguage: TargetLanguage
 ): Promise<{ hasErrors: boolean; errors: string[] }> => {
-  const ai = getAI();
-  
-  // Optimization here too for spelling check
-  const optimizedImage = await processImageForGemini(imageDataUrl);
-  const base64Data = cleanBase64(optimizedImage);
-  const mimeType = getMimeType(optimizedImage);
+    const ai = getAI();
 
-  const prompt = `Analyze text in this image (${targetLanguage}). Identify spelling/grammar errors. Ignore brand names. Return JSON { "hasErrors": boolean, "errors": string[] }. Describe errors in VIETNAMESE.`;
+    // Optimization here too for spelling check
+    const optimizedImage = await processImageForGemini(imageDataUrl);
+    const base64Data = cleanBase64(optimizedImage);
+    const mimeType = getMimeType(optimizedImage);
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: {
-        parts: [
-          { inlineData: { data: base64Data, mimeType: mimeType } },
-          { text: prompt }
-        ]
-      },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            hasErrors: { type: Type.BOOLEAN },
-            errors: { type: Type.ARRAY, items: { type: Type.STRING } }
-          }
-        }
-      }
-    });
+    const prompt = `Analyze text in this image (${targetLanguage}). Identify spelling/grammar errors. Ignore brand names. Return JSON { "hasErrors": boolean, "errors": string[] }. Describe errors in VIETNAMESE.`;
 
-    return JSON.parse(response.text || '{"hasErrors": false, "errors": []}');
-  } catch (error) {
-    console.warn("Spelling check failed:", error);
-    return { hasErrors: false, errors: [] };
-  }
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [
+                    { inlineData: { data: base64Data, mimeType: mimeType } },
+                    { text: prompt }
+                ]
+            },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        hasErrors: { type: Type.BOOLEAN },
+                        errors: { type: Type.ARRAY, items: { type: Type.STRING } }
+                    }
+                }
+            }
+        });
+
+        return JSON.parse(response.text || '{"hasErrors": false, "errors": []}');
+    } catch (error) {
+        console.warn("Spelling check failed:", error);
+        return { hasErrors: false, errors: [] };
+    }
 };
 
 // --- THEME CHANGER SERVICE ---
@@ -733,12 +825,12 @@ export const transformImageTheme = async (
     explicitStyleDescription?: string
 ): Promise<string> => {
     const ai = getAI();
-    
+
     // Optimize Input
     const optimizedMain = await processImageForGemini(originalImageData);
     const base64Data = cleanBase64(optimizedMain);
     const mimeType = getMimeType(optimizedMain);
-    
+
     const parts: any[] = [
         { inlineData: { data: base64Data, mimeType: mimeType } }
     ];
@@ -790,7 +882,7 @@ export const transformImageTheme = async (
         const refB64 = cleanBase64(optimizedRef);
         const refMime = getMimeType(optimizedRef);
         parts.push({ inlineData: { data: refB64, mimeType: refMime } });
-        
+
         prompt = `You have an input image (Image 1) and a Style Reference (Image 2).
         Task: Redesign Image 1 to match the visual style, color palette, and atmosphere of Image 2.
         Theme: ${theme}.
@@ -832,7 +924,7 @@ export const transformImageTheme = async (
         });
 
         if (response.candidates && response.candidates[0].content.parts) {
-             for (const part of response.candidates[0].content.parts) {
+            for (const part of response.candidates[0].content.parts) {
                 if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
             }
         }
@@ -855,7 +947,7 @@ export const generateASOScreenshot = async (
 ): Promise<string> => {
     const ai = getAI();
     const parts: any[] = [];
-    
+
     // Add images to parts based on logic
     let styleRefIndex = 0;
     let uiImageIndex = 0;
@@ -868,7 +960,7 @@ export const generateASOScreenshot = async (
         parts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
         styleRefIndex = imageCounter++;
     }
-    
+
     if (uiImageB64) {
         const rawUrl = `data:image/png;base64,${uiImageB64}`;
         const optimized = await processImageForGemini(rawUrl);
@@ -877,10 +969,10 @@ export const generateASOScreenshot = async (
     }
 
     const defaultSpecs = {
-         device: "iPhone 17 Pro Max (Titanium Frame, Thin Bezels) OR Samsung S25 Ultra",
-         ratio: "9:16 (Portrait)",
-         style: 'Modern, Clean, High-End Tech, "2.5D Pop-out" effect (UI elements floating slightly)',
-         decor: "Minimalist (1-2 icons max)"
+        device: "iPhone 17 Pro Max (Titanium Frame, Thin Bezels) OR Samsung S25 Ultra",
+        ratio: "9:16 (Portrait)",
+        style: 'Modern, Clean, High-End Tech, "2.5D Pop-out" effect (UI elements floating slightly)',
+        decor: "Minimalist (1-2 icons max)"
     };
 
     const finalSpecs = customSpecs || defaultSpecs;
@@ -950,7 +1042,7 @@ export const generateASOScreenshot = async (
             break;
 
         case 'SYNC':
-             specificPrompt = `
+            specificPrompt = `
             MODE: C (VARIATION & SYNC).
             INPUT: User Prompt: "${userPrompt}".
             REFERENCE 1: Image ${styleRefIndex} is the STYLE MASTER (Existing Screenshot).
@@ -977,16 +1069,16 @@ export const generateASOScreenshot = async (
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-image-preview', // High quality model for ASO
             contents: { parts },
-            config: { 
-                imageConfig: { 
+            config: {
+                imageConfig: {
                     aspectRatio: "9:16", // Default ASO Ratio
                     imageSize: "2K" // 2K Resolution
-                } 
+                }
             }
         });
 
         if (response.candidates && response.candidates[0].content.parts) {
-             for (const part of response.candidates[0].content.parts) {
+            for (const part of response.candidates[0].content.parts) {
                 if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
             }
         }
@@ -1007,7 +1099,7 @@ export const generateFusionImage = async (
     aspectRatio: AspectRatio
 ): Promise<string> => {
     const ai = getAI();
-    
+
     // Optimize inputs
     const optimizedStyle = await processImageForGemini(styleImageB64);
     const styleData = cleanBase64(optimizedStyle);
@@ -1065,8 +1157,8 @@ export const generateFusionImage = async (
 
         if (response.candidates && response.candidates[0].content.parts) {
             for (const part of response.candidates[0].content.parts) {
-               if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-           }
+                if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+            }
         }
         throw new Error("No fusion image generated");
 

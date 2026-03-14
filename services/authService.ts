@@ -1,6 +1,45 @@
 
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
+export const signUpWithEmail = async (email: string, password: string) => {
+  if (!isSupabaseConfigured) {
+    alert("Chưa cấu hình Supabase!");
+    return { data: null, error: new Error("Missing configuration") };
+  }
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: `${window.location.origin}`,
+      },
+    });
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error("Sign Up Error:", error);
+    return { data: null, error };
+  }
+};
+
+export const signInWithEmail = async (email: string, password: string) => {
+  if (!isSupabaseConfigured) {
+    alert("Chưa cấu hình Supabase!");
+    return { data: null, error: new Error("Missing configuration") };
+  }
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error("Sign In Error:", error);
+    return { data: null, error };
+  }
+};
+
 export const signInWithGoogle = async () => {
   if (!isSupabaseConfigured) {
     alert("Chưa cấu hình Supabase! Không thể đăng nhập Google.");
@@ -8,7 +47,6 @@ export const signInWithGoogle = async () => {
   }
 
   try {
-    // Sử dụng window.location.origin để tự động lấy domain hiện tại (localhost hoặc vercel app)
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {

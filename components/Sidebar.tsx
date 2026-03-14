@@ -1,7 +1,6 @@
 
-
 import React from 'react';
-import { Layers, Wand2, Search, BrainCircuit, Bot, Globe2, Palette, Layout, GitMerge } from 'lucide-react';
+import { Layers, Wand2, Globe2, Palette, Layout, GitMerge } from 'lucide-react';
 import { AppMode } from '../types';
 
 interface SidebarProps {
@@ -14,92 +13,107 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentMode, setMode }) => {
     {
       id: AppMode.BATCH_STUDIO,
       icon: Layers,
-      label: 'Xưởng Tạo Ảnh',
-      desc: 'Tạo & Sửa ảnh hàng loạt'
+      label: 'Batch Studio',
+      desc: 'Tạo & Sửa ảnh hàng loạt',
+      color: 'from-indigo-500 to-blue-500',
     },
     {
       id: AppMode.AI_FUSION,
       icon: GitMerge,
       label: 'AI Fusion',
-      desc: 'Hợp nhất Phong cách & Nội dung'
+      desc: 'Hợp nhất Phong cách',
+      color: 'from-violet-500 to-purple-500',
     },
     {
       id: AppMode.ASO_STUDIO,
       icon: Layout,
       label: 'ASO Architect',
-      desc: 'Thiết kế Screenshot App Store'
+      desc: 'Screenshot App Store',
+      color: 'from-cyan-500 to-teal-500',
     },
     {
       id: AppMode.AI_THEME_CHANGER,
       icon: Palette,
-      label: 'AI Theme Changer',
-      desc: 'Biến hình lễ hội/sự kiện'
+      label: 'Theme Changer',
+      desc: 'Biến hình Lễ hội',
+      color: 'from-orange-500 to-amber-500',
     },
     {
       id: AppMode.LOCALIZE_STUDIO,
       icon: Globe2,
-      label: 'LocalizeAI Pro',
-      desc: 'Dịch thuật & Hóa giải hình ảnh'
+      label: 'Localize Pro',
+      desc: 'Dịch thuật Hình ảnh',
+      color: 'from-emerald-500 to-green-500',
     },
     {
       id: AppMode.IMAGE_EDIT,
       icon: Wand2,
-      label: 'Chỉnh Sửa Magic',
-      desc: 'Sửa ảnh bằng Chat'
-    },
-    {
-      id: AppMode.SEARCH_GROUNDING,
-      icon: Search,
-      label: 'Tìm kiếm & Chat',
-      desc: 'Thông tin thực tế'
-    },
-    {
-      id: AppMode.THINKING,
-      icon: BrainCircuit,
-      label: 'Suy Luận Sâu',
-      desc: 'Gemini 3.0 Tư duy'
-    },
-    {
-      id: AppMode.CHAT_BOT,
-      icon: Bot,
-      label: 'AI Chat Bot',
-      desc: 'Trò chuyện thông minh'
+      label: 'Magic Edit',
+      desc: 'Sửa ảnh bằng Chat',
+      color: 'from-rose-500 to-pink-500',
     }
   ];
 
   return (
-    <div className="w-64 bg-slate-900/50 backdrop-blur-xl border-r border-white/5 flex flex-col h-full shrink-0">
-      <div className="p-6 flex items-center gap-3">
-        <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-lg flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-purple-500/20">M</div>
-        <span className="font-bold text-lg text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">Media Studio</span>
+    <div className="w-[220px] flex flex-col h-full shrink-0" style={{ background: '#0d0d14' }}>
+      {/* Logo */}
+      <div className="flex items-center gap-3 px-5 py-5 mb-2">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-white text-lg shadow-lg relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #6366f1 0%, #f97316 100%)' }}>
+          M
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-black text-white tracking-tight">Media Studio</div>
+          <div className="text-[9px] text-slate-500 font-medium">AI Creative Tools</div>
+        </div>
       </div>
 
-      <nav className="flex-1 px-3 space-y-2 overflow-y-auto">
-        {menuItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => setMode(item.id)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all group border ${
-              currentMode === item.id 
-                ? 'bg-white/5 border-purple-500/30 text-white shadow-[0_0_15px_rgba(168,85,247,0.15)]' 
-                : 'text-slate-400 hover:bg-white/5 hover:text-slate-200 hover:border-white/10 border-transparent'
-            }`}
-          >
-            <item.icon size={20} className={`transition-colors ${currentMode === item.id ? 'text-purple-400' : 'text-slate-500 group-hover:text-slate-300'}`} />
-            <div>
-              <div className={`font-medium text-sm ${currentMode === item.id ? 'text-white' : 'text-slate-300'}`}>
-                {item.label}
+      {/* Divider */}
+      <div className="mx-4 h-px mb-3" style={{ background: 'linear-gradient(90deg, transparent, rgba(99,102,241,0.3), transparent)' }}></div>
+
+      {/* Navigation */}
+      <nav className="flex-1 flex flex-col gap-0.5 px-3">
+        {menuItems.map((item) => {
+          const isActive = currentMode === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setMode(item.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 group relative ${isActive
+                ? 'text-white'
+                : 'text-slate-500 hover:text-slate-200'
+                }`}
+              style={isActive ? { background: 'rgba(99,102,241,0.12)' } : undefined}
+            >
+              {/* Active indicator */}
+              {isActive && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full bg-gradient-to-b from-indigo-400 to-indigo-600"></div>
+              )}
+
+              {/* Icon */}
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all ${isActive
+                ? `bg-gradient-to-br ${item.color} shadow-lg`
+                : 'bg-white/5 group-hover:bg-white/8'
+                }`}>
+                <item.icon size={16} className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'} />
               </div>
-              <div className="text-[10px] text-slate-500 font-medium mt-0.5 group-hover:text-slate-400">
-                {item.desc}
+
+              {/* Text */}
+              <div className="min-w-0 flex-1">
+                <div className={`text-[12px] font-semibold truncate ${isActive ? 'text-white' : 'text-slate-300 group-hover:text-white'}`}>{item.label}</div>
+                <div className={`text-[9px] truncate ${isActive ? 'text-indigo-300/70' : 'text-slate-600'}`}>{item.desc}</div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </nav>
-      
-      <div className="p-4 border-t border-white/5 text-center">
-        <span className="text-[10px] text-slate-600">Powered by Gemini API</span>
+
+      {/* Footer */}
+      <div className="mt-auto px-5 py-4">
+        <div className="h-px mb-3" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }}></div>
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]"></div>
+          <span className="text-[10px] text-slate-500 font-medium">API Connected</span>
+        </div>
       </div>
     </div>
   );

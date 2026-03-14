@@ -3,9 +3,6 @@
 export enum AppMode {
   BATCH_STUDIO = 'BATCH_STUDIO',
   IMAGE_EDIT = 'IMAGE_EDIT',
-  SEARCH_GROUNDING = 'SEARCH_GROUNDING',
-  THINKING = 'THINKING',
-  CHAT_BOT = 'CHAT_BOT',
   LOCALIZE_STUDIO = 'LOCALIZE_STUDIO',
   AI_THEME_CHANGER = 'AI_THEME_CHANGER',
   ASO_STUDIO = 'ASO_STUDIO',
@@ -104,30 +101,30 @@ export interface ASORequest {
 }
 
 export interface ASOStyleSpecs {
-    device: string;
-    ratio: string;
-    style: string;
-    decor: string;
+  device: string;
+  ratio: string;
+  style: string;
+  decor: string;
 }
 
 export interface ASOJob {
-    id: string;
-    status: 'pending' | 'success' | 'error';
-    mode: ASOMode;
-    prompt: string;
-    resultUrl?: string;
-    timestamp: number;
-    error?: string;
+  id: string;
+  status: 'pending' | 'success' | 'error';
+  mode: ASOMode;
+  prompt: string;
+  resultUrl?: string;
+  timestamp: number;
+  error?: string;
 }
 
 // AI Fusion Types
 export interface FusionJob {
-    id: string;
-    status: 'pending' | 'success' | 'error';
-    styleImage?: string;
-    contentImage?: string;
-    prompt: string;
-    resultUrl?: string;
-    error?: string;
-    timestamp: number;
+  id: string;
+  status: 'pending' | 'success' | 'error';
+  styleImage?: string;
+  contentImage?: string;
+  prompt: string;
+  resultUrl?: string;
+  error?: string;
+  timestamp: number;
 }
