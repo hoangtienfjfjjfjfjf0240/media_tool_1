@@ -272,6 +272,82 @@ export const thinkingChat = async (prompt: string) => {
     }
 };
 
+// --- ANALYZE IMAGE FOR SMART STYLE SUGGESTIONS ---
+export const analyzeImageForStyles = async (
+    imageB64: string,
+    mimeType: string,
+    userContext?: string,
+): Promise<{ emoji: string; label: string; prompt: string }[]> => {
+    const ai = getAI();
+    try {
+        const rawUrl = `data:${mimeType};base64,${imageB64}`;
+        const optimized = await processImageForGemini(rawUrl);
+
+        const contextClause = userContext?.trim()
+            ? `\n\nUSER DIRECTION: "${userContext}"\nThe user has specified a direction. You MUST tailor ALL suggestions to match this direction.\nExamples:\n- "châu Âu" or "European" → suggest SPECIFIC European country styles: French Parisian, Italian Tuscan, Spanish Mediterranean, English Victorian, Scandinavian, Greek Aegean, German Bauhaus, Dutch Colonial\n- "châu Á" or "Asian" → suggest SPECIFIC Asian country styles: Japanese Wabi-Sabi, Chinese Ming Dynasty, Korean Hanok, Vietnamese Colonial, Thai Royal, Indian Mughal, Balinese Tropical, Moroccan Riad\n- "hiện đại" or "modern" → suggest specific modern movements: Bauhaus, Memphis, Brutalist, Deconstructivist, High-Tech, Organic Modern, Neo-Futurism, Smart Home\n- Any other direction → interpret and suggest the most relevant specific sub-styles\n\nDo NOT suggest styles outside the user's direction. Every suggestion must be a SPECIFIC variant within the directed category.`
+            : '';
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [
+                    { inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } },
+                    { text: `Analyze this image and suggest 8 distinct style variations.${userContext ? ` User wants: "${userContext}"` : ''}` }
+                ]
+            },
+            config: {
+                systemInstruction: `You are a DOMAIN EXPERT interior designer, architect, and visual stylist with deep knowledge of specific design traditions from every country and era.
+
+CRITICAL RULE: COMPOSITION LOCK
+- Same camera angle, same object placement, same framing, same spatial layout.
+- ONLY change: materials, textures, fabrics, color palette, lighting mood, decorative elements, surface finishes.
+${contextClause}
+
+STEP 1: Analyze the uploaded image — identify: room type, furniture layout, objects present, camera angle, lighting.
+
+STEP 2: Generate EXACTLY 8 style suggestions. Each must be a SPECIFIC, NAMED style tradition (not generic).
+
+PROMPT DETAIL REQUIREMENTS — Each prompt MUST include ALL of these:
+1. COMPOSITION ANCHOR: "Keep the EXACT same composition, camera angle, all furniture positions and object placement unchanged."
+2. SURFACE MATERIALS: Specific material names (e.g., "herringbone oak parquet", "Carrara marble", "rattan weave", "brushed brass")
+3. COLOR PALETTE: Exact color descriptions (e.g., "warm terracotta #C4622D, olive green #687530, cream white #FFF8E7")
+4. TEXTILES & FABRICS: Specific fabric types (e.g., "linen drapes", "velvet cushions", "jute rug", "silk throw")
+5. WALL TREATMENT: Specific finish (e.g., "Venetian plaster", "exposed brick", "wainscoting panels", "lime wash")
+6. LIGHTING: Specific mood (e.g., "warm amber 2700K candlelight glow", "cool daylight from north-facing windows")
+7. DECORATIVE ACCENTS: 2-3 specific items (e.g., "blue-and-white Delft pottery", "ikebana arrangement", "Berber textile")
+8. ATMOSPHERE: Overall mood in 2-3 words (e.g., "serene and contemplative", "opulent warmth", "rustic authenticity")
+
+EACH prompt should be 60-100 words long with maximum specificity.
+
+FORMAT: Return JSON array of 8 objects with {emoji, label, prompt}.
+- emoji: flag emoji of the country/region OR relevant style emoji
+- label: "[Country/Region] [Style Name]" (e.g., "French Parisian", "Japanese Wabi-Sabi")
+- prompt: The hyper-detailed style-transfer prompt as described above`,
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            emoji: { type: Type.STRING },
+                            label: { type: Type.STRING },
+                            prompt: { type: Type.STRING }
+                        },
+                        required: ["emoji", "label", "prompt"]
+                    }
+                }
+            }
+        });
+
+        const text = response.text;
+        if (!text) return [];
+        return JSON.parse(text);
+    } catch (error: any) {
+        console.error("Style Analysis Error:", error.message || error);
+        return [];
+    }
+};
+
 // --- PROMPT SUGGESTIONS / BREAKDOWN (Gemini 2.5 Flash) ---
 export const generatePromptSuggestions = async (
     basePrompt: string,
@@ -298,27 +374,38 @@ export const generatePromptSuggestions = async (
             parts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
 
             systemPrompt = `
-            You are a World-Class AI Creative Director.
+            You are an EXPERT Interior Designer, Architect, and Visual Stylist with encyclopedic knowledge of design traditions from every country and era.
             
-            INPUT CONTEXT:
-            1. REFERENCE IMAGE (Uploaded): Source of Art Style, Lighting, Composition, and General Vibe.
-            2. USER REQUEST: "${basePrompt}" (Instructions for modification).
-
-            YOUR TASK:
-            Generate ${count} distinct, HIGH-FIDELITY image prompts that:
-            1. **INHERIT THE VISUAL STYLE**: Strictly keep the lighting, brushwork, camera angle, and "feel" of the Reference Image.
-            2. **APPLY USER CHANGES**: Modify the subject (gender, age), outfit, or background EXACTLY as requested in the User Request.
+            INPUTS:
+            1. REFERENCE IMAGE (Uploaded): Analyze EXACTLY: room type, furniture layout, every object present, camera angle, lighting setup.
+            2. USER DIRECTION: "${basePrompt}" (Style direction, theme, or modification request).
             
-            CRITICAL LOGIC:
-            - If the user says "female version", describe a subject with the SAME pose/style as the image, but FEMALE.
-            - If the user says "in a forest", keep the subject style but describe a FOREST background.
-            - If the user request is empty, just describe variations of the image itself.
+            INTERPRETING USER DIRECTION:
+            - "châu Âu" / "European" → Generate ${count} SPECIFIC European country styles (French Parisian, Italian Tuscan, Spanish Mediterranean, English Victorian...)
+            - "châu Á" / "Asian" → Generate ${count} SPECIFIC Asian country styles (Japanese Wabi-Sabi, Chinese Ming, Korean Hanok...)
+            - "hiện đại" / "modern" → Generate ${count} SPECIFIC modern movements (Bauhaus, Memphis, Brutalist...)
+            - Empty/vague → Generate ${count} diverse global styles relevant to the image category
+            - Specific instruction → Apply that instruction with ${count} detailed variations
 
-            OUTPUT FORMAT:
-            Return ONLY a JSON array of strings. Each string is a full, detailed prompt.
+            ★★★ COMPOSITION LOCK (CRITICAL) ★★★
+            Every prompt MUST start with: "Keep the EXACT same composition, camera angle, all furniture positions and object placement unchanged."
+
+            EACH PROMPT MUST INCLUDE ALL 8 DETAIL LAYERS:
+            1. COMPOSITION LOCK (above)
+            2. SURFACE MATERIALS: Specific names (e.g., "herringbone oak parquet", "Carrara marble countertops", "brushed brass hardware")
+            3. COLOR PALETTE: Exact colors with hex codes (e.g., "warm terracotta #C4622D, sage green #B2AC88, cream white #FFF8E7")
+            4. TEXTILES & FABRICS: (e.g., "raw linen drapes", "velvet emerald cushions", "hand-woven jute rug")
+            5. WALL TREATMENT: (e.g., "Venetian plaster in warm ochre", "exposed whitewashed brick", "dark wainscoting panels")
+            6. LIGHTING: Specific mood (e.g., "warm amber 2700K from wrought-iron chandeliers", "soft natural light through sheer curtains")
+            7. DECORATIVE ACCENTS: 2-3 specific items (e.g., "blue Delft pottery", "Murano glass vase", "vintage Persian rug")
+            8. ATMOSPHERE: 2-3 mood words (e.g., "rustic elegance", "serene minimalism", "opulent warmth")
+
+            Each prompt should be 80-120 words. Be EXTREMELY specific — name exact materials, patterns, and regional design vocabularies.
+
+            OUTPUT: Return ONLY a JSON array of ${count} prompt strings.
             `;
 
-            parts.push({ text: `Generate ${count} variations based on this image and this instruction: "${basePrompt}"` });
+            parts.push({ text: `Analyze this reference image and generate ${count} hyper-detailed style variation prompts. User direction: "${basePrompt}"` });
 
         } else {
             // --- TEXT ONLY LOGIC ---
@@ -398,34 +485,42 @@ export const generateDistinctPrompts = async (
             
             USER INSTRUCTION: "${baseIdea}"
             
-            CRITICAL RULES — INTELLIGENT MODIFICATION:
-            1. **FIRST**: Describe the reference image in detail (subject, pose, clothes, background, lighting, style).
-            2. **THEN**: For each variation, ONLY change what the user explicitly asks to change. Keep EVERYTHING ELSE identical.
+            ★★★ ABSOLUTE RULE: COMPOSITION LOCK ★★★
+            The generated image MUST have the EXACT SAME:
+            - Camera angle and framing
+            - Object placement and spatial layout  
+            - Subject position and pose
+            - Overall scene structure
+            
+            You may ONLY change:
+            - Visual style, materials, textures, color palette
+            - Lighting mood and atmosphere
+            - Surface finishes and decorative details
+            - What the user explicitly requests
+            
+            CRITICAL: Do NOT create new scenes or rearrange objects. The output must look like the SAME PHOTO with a different visual treatment applied.
             
             MODIFICATION INTELLIGENCE:
-            - If user says "old / young / age variations" → Keep the SAME person identity, pose, clothes, background. ONLY change apparent age.
-            - If user says "red dress / suit / casual" → Keep the SAME person, pose, background. ONLY change outfit.
-            - If user says "in forest / beach / city" → Keep the SAME person, pose, outfit. ONLY change background/environment.
-            - If user says "angry / happy / sad" → Keep EVERYTHING. ONLY change facial expression.
-            - If user says "blonde hair / short hair" → Keep EVERYTHING. ONLY change hair.
-            - If user mentions MULTIPLE changes (e.g. "old version in winter") → Apply ALL mentioned changes, keep the rest.
-            - If user gives a GENERAL creative idea (e.g. "variations") → Create diverse but recognizable versions of the same subject.
+            - If user says "style changes" (e.g., Japanese, European, Minimalist) → Keep the EXACT same room/scene/composition. ONLY change materials, colors, textures, decorative style.
+            - If user says "old / young / age" → Keep the SAME pose, clothes, background. ONLY change apparent age.
+            - If user says outfit changes → Keep the SAME person, pose, background. ONLY change outfit.
+            - If user says background changes → Keep the SAME subject, pose, outfit. ONLY change background.
             
             EACH PROMPT MUST:
-            1. Start by describing the PRESERVED elements from the reference (to anchor the generation).
-            2. Then clearly specify the MODIFIED element(s).
-            3. Include technical quality tags: lighting style, camera angle, resolution.
-            4. Be detailed enough for standalone image generation (AI generating from this prompt should produce something very close to the reference + modifications).
+            1. Start with: "Using the reference image as the EXACT composition template,"
+            2. Then specify the style/modification to apply
+            3. Emphasize: "Keep identical camera angle, framing, object positions, and spatial layout."
+            4. Add specific style details (materials, colors, textures, lighting)
             
             ${genderInstruction}
             
-            EXAMPLE:
-            Reference: Photo of a young Asian woman in a blue dress, standing in a garden, soft sunset lighting.
-            User: "tạo phiên bản già và trẻ" (create old and young versions)
+            EXAMPLE for style change:
+            Reference: Living room with sofa, coffee table, bookshelf
+            User: "Japanese and European styles"
             Output:
             [
-              "A teenage Asian girl (around 16 years old) with the same face structure, wearing the same blue dress, standing in the same garden with blooming flowers, soft golden sunset lighting, youthful energy, portrait photography, 8k, highly detailed skin texture.",
-              "An elderly Asian woman (around 65 years old) with the same face structure but with graceful wrinkles and silver-white hair, wearing the same blue dress, standing in the same garden with blooming flowers, soft golden sunset lighting, dignified and warm expression, portrait photography, 8k, highly detailed."
+              "Using the reference image as the EXACT composition template, apply Japanese Zen interior style. Keep identical camera angle, framing, and all furniture positions. Replace materials with: light natural wood (hinoki), tatami-textured flooring, shoji screen elements, washi paper accents. Neutral earth tones (beige, warm gray, soft white). Soft diffused natural lighting. Minimalist decoration.",
+              "Using the reference image as the EXACT composition template, apply Scandinavian Modern style. Keep identical camera angle, framing, and all furniture positions. Replace materials with: blonde birch wood, white-washed surfaces, wool throws, sheepskin accents. Cool neutral palette (white, light gray, pale blue). Bright airy natural lighting. Hygge atmosphere."
             ]
             
             Return ONLY a JSON array of ${count} prompt strings.
@@ -533,7 +628,11 @@ export const generateBatchVariation = async (
     faceMimeType?: string,
     signal?: AbortSignal,
     gender?: GenderOption,
-    modifyBackground?: boolean
+    modifyBackground?: boolean,
+    paletteImageB64?: string,
+    paletteMimeType?: string,
+    chainRefB64?: string,
+    chainRefMimeType?: string
 ) => {
     const ai = getAI();
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -543,6 +642,8 @@ export const generateBatchVariation = async (
 
         let styleRefIndex = 0;
         let faceRefIndex = 0;
+        let paletteRefIndex = 0;
+        let chainRefIndex = 0;
         let mockupSourceIndex = 0;
         let mockupTargetIndex = 0;
         let currentIndex = 1;
@@ -566,6 +667,20 @@ export const generateBatchVariation = async (
                 parts.push({ inlineData: { data: cleanBase64(optimizedFace), mimeType: getMimeType(optimizedFace) } });
                 faceRefIndex = currentIndex++;
             }
+            // PALETTE REF (Freepik-style color/material reference)
+            if (paletteImageB64 && paletteMimeType) {
+                const rawDataUrl = `data:${paletteMimeType};base64,${paletteImageB64}`;
+                const optimizedPalette = await processImageForGemini(rawDataUrl);
+                parts.push({ inlineData: { data: cleanBase64(optimizedPalette), mimeType: getMimeType(optimizedPalette) } });
+                paletteRefIndex = currentIndex++;
+            }
+            // CHAIN REF (Style consistency from previous generation)
+            if (chainRefB64 && chainRefMimeType) {
+                const rawDataUrl = `data:${chainRefMimeType};base64,${chainRefB64}`;
+                const optimizedChain = await processImageForGemini(rawDataUrl);
+                parts.push({ inlineData: { data: cleanBase64(optimizedChain), mimeType: getMimeType(optimizedChain) } });
+                chainRefIndex = currentIndex++;
+            }
         } else if (mode === 'MOCKUP') {
             if (refImageB64 && refMimeType) {
                 const rawDataUrl = `data:${refMimeType};base64,${refImageB64}`;
@@ -587,7 +702,7 @@ export const generateBatchVariation = async (
             // DIRECT GENERATION LOGIC: Use raw prompt, no wrapper
             if (styleRefIndex > 0) {
                 // IMAGE-TO-IMAGE / EDIT BY PROMPT logic
-                finalPrompt = `TRANSFORM THIS IMAGE: ${prompt}. \n\nINSTRUCTION: Keep the composition but change the style/content according to the prompt strictly.`;
+                finalPrompt = `EDIT THIS EXACT IMAGE — DO NOT CREATE A NEW IMAGE. Preserve the EXACT camera angle, every object's position, room layout, furniture placement, and framing from the reference. ONLY change: ${prompt}. The output must be the SAME photograph with modified surface materials/colors. Do NOT rearrange, add, or remove any elements.`;
             } else {
                 finalPrompt = prompt;
             }
@@ -607,34 +722,55 @@ export const generateBatchVariation = async (
 
             if (styleRefIndex > 0) {
                 finalPrompt = `
-                ROLE: Expert Image Editor specializing in precise, targeted modifications.
+                TASK: EDIT THIS EXACT IMAGE — DO NOT CREATE A NEW IMAGE.
                 
-                INPUTS:
-                1. REFERENCE IMAGE (Image ${styleRefIndex}): The source image to modify.
-                2. USER INSTRUCTION: "${prompt}"
+                You are an image EDITOR, not an image GENERATOR.
+                Your job is to MODIFY the provided reference image, NOT to create a new scene.
                 
-                TASK: "INTELLIGENT MODIFY"
+                REFERENCE IMAGE (Image ${styleRefIndex}): This is the image you are EDITING.
                 
-                CORE PRINCIPLE: Only change what the user EXPLICITLY asks to change. Preserve EVERYTHING else.
+                ════════════════════════════════════════
+                ██ ABSOLUTE RULE: PIXEL-LEVEL COMPOSITION LOCK ██
+                ════════════════════════════════════════
                 
-                STEP 1 — ANALYZE the instruction:
-                - What specific attribute(s) does the user want changed? (age, outfit, hair, expression, background, style, etc.)
-                - What is NOT mentioned? → These must be PRESERVED exactly.
+                The output image MUST be a DIRECT EDIT of Image ${styleRefIndex}.
                 
-                STEP 2 — APPLY changes:
-                - PRESERVE: Same person identity, same face structure, same pose, same composition, same camera angle, same lighting quality, same color grading — UNLESS the instruction says otherwise.
-                - MODIFY: Apply ONLY the changes requested in the instruction.
+                PRESERVE EXACTLY (zero tolerance):
+                ✓ Camera angle — same lens, same perspective, same distance
+                ✓ Every object's EXACT position — same pixel location, same size ratio
+                ✓ Room/scene structure — same walls, same floor area, same window positions
+                ✓ Furniture layout — same bed position, same shelf position, same table position
+                ✓ Framing and crop — identical composition boundaries
+                ✓ Subject pose — if person exists, same pose and body position
                 
-                EXAMPLES OF CORRECT BEHAVIOR:
-                - Instruction: "older version" → Same person, same clothes, same background. Only add age (wrinkles, gray hair).
-                - Instruction: "wearing red dress" → Same person, same face, same background. Only change outfit to red dress.
-                - Instruction: "in a snowy forest" → Same person, same clothes, same pose. Only change background to snowy forest.
-                - Instruction: "smiling" → Same everything. Only change expression to a smile.
-                - Instruction: "cyberpunk style" → Same subject and composition. Change the overall aesthetic/style to cyberpunk.
+                NEVER DO ANY OF THESE:
+                ✗ DO NOT create a new room layout
+                ✗ DO NOT rearrange any furniture or objects
+                ✗ DO NOT change camera angle or perspective
+                ✗ DO NOT add objects that don't exist in the reference
+                ✗ DO NOT remove objects that exist in the reference
+                ✗ DO NOT generate a "similar looking" scene — it must be THE SAME scene
+                
+                ════════════════════════════════════════
+                WHAT TO MODIFY (style changes ONLY):
+                ════════════════════════════════════════
+                Based on instruction: "${prompt}"
+                
+                Apply ONLY these surface-level changes:
+                → Material textures (e.g., wood type, fabric type, metal finish)
+                → Color palette and color grading
+                → Wall treatments (paint color, wallpaper pattern)
+                → Textile patterns and colors (bedding, curtains, rugs)
+                → Lighting warmth/mood (but NOT light source positions)
+                → Decorative style of existing objects
+                
+                Think of it as: Photoshop "material swap" — same photo, different surfaces.
                 
                 ${modifiers.join('\n')}
                 
-                ${faceRefIndex > 0 ? `FACE REFERENCE (Image ${faceRefIndex}): Use this face for the subject's face. Match the face structure and features from this reference.` : ''}
+                ${faceRefIndex > 0 ? `FACE REFERENCE (Image ${faceRefIndex}): Use this face for the subject.` : ''}
+                ${paletteRefIndex > 0 ? `COLOR PALETTE (Image ${paletteRefIndex}): Extract and apply the exact color palette, material textures, and visual mood from this palette image.` : ''}
+                ${chainRefIndex > 0 ? `STYLE MATCH (Image ${chainRefIndex}): Match the exact materials, lighting, and color grading of this previous output.` : ''}
                 
                 ${qualityControl}
                 `;
@@ -646,10 +782,18 @@ export const generateBatchVariation = async (
         const imageConfig: any = { aspectRatio: aspectRatio };
         if (model === 'gemini-3-pro-image-preview') imageConfig.imageSize = "1K";
 
+        // Add system instruction for VARIATION mode to enforce composition
+        const systemInstruction = (mode === 'VARIATION' && styleRefIndex > 0)
+            ? `You are a precision image editor. You ONLY modify surface-level visual properties (materials, colors, textures, lighting mood) of the provided reference image. You NEVER change the composition, layout, camera angle, or object positions. Every output must look like the EXACT same photograph with different surface materials applied. If the user asks you to "create" or "generate", interpret it as "edit the reference image to apply this style". NEVER generate a new scene.`
+            : undefined;
+
         const requestPromise = ai.models.generateContent({
             model: model,
             contents: { parts },
-            config: { imageConfig }
+            config: {
+                imageConfig,
+                ...(systemInstruction ? { systemInstruction } : {})
+            }
         });
 
         const response = await waitFor(requestPromise, signal) as GenerateContentResponse;

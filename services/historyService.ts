@@ -8,11 +8,68 @@ const base64ToBlob = async (base64: string, contentType: string): Promise<Blob> 
   return await res.blob();
 };
 
+// Helper: Check if user has a real Supabase auth session
+const hasSupabaseSession = async (): Promise<boolean> => {
+  if (!isSupabaseConfigured) return false;
+  try {
+    const { data } = await supabase.auth.getSession();
+    return !!data?.session;
+  } catch { return false; }
+};
+
+// --- LOCAL HISTORY (for "Vào nhanh" users) ---
+const LOCAL_HISTORY_KEY = 'media_studio_local_history';
+const MAX_LOCAL_HISTORY = 10;
+
+// Compress image to tiny thumbnail for localStorage (150x150, JPEG 50%)
+const createThumbnail = (base64: string, mimeType: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = 150;
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d')!;
+      // Center-crop
+      const scale = Math.max(size / img.width, size / img.height);
+      const w = img.width * scale, h = img.height * scale;
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.5)); // ~5-15KB each
+    };
+    img.onerror = () => resolve(''); // Skip if error
+    img.src = `data:${mimeType};base64,${base64}`;
+  });
+};
+
+const saveLocalHistory = (item: HistoryItem): HistoryItem => {
+  try {
+    const existing = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY) || '[]') as HistoryItem[];
+    existing.unshift(item);
+    const trimmed = existing.slice(0, MAX_LOCAL_HISTORY);
+    try {
+      localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(trimmed));
+    } catch (e) {
+      // If still too large, keep only 10
+      localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(trimmed.slice(0, 10)));
+    }
+  } catch (e) { console.warn('Local history save error:', e); }
+  return item;
+};
+
+const getLocalHistory = (userId: string): HistoryItem[] => {
+  try {
+    const all = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY) || '[]') as HistoryItem[];
+    return all.filter(h => h.user_id === userId);
+  } catch { return []; }
+};
+
+// --- MAIN FUNCTIONS ---
+
 export const uploadAndSaveHistory = async (
   userId: string,
   data: {
     type: 'IMAGE' | 'MOCKUP' | 'VARIATION';
-    base64OrUrl: string; // Base64 string (image)
+    base64OrUrl: string;
     prompt: string;
     model: string;
     ratio: string;
@@ -20,76 +77,84 @@ export const uploadAndSaveHistory = async (
   }
 ): Promise<HistoryItem | null> => {
   if (!userId) return null;
-  if (!isSupabaseConfigured) return null; // Avoid errors if not configured
 
-  try {
-    // 1. Prepare File
-    let fileBlob: Blob;
-    let fileExt = 'png';
+  // Try Supabase first (for authenticated users)
+  const hasSession = await hasSupabaseSession();
 
-    if (data.mimeType.startsWith('image/')) {
-      fileBlob = await base64ToBlob(data.base64OrUrl, data.mimeType);
-    } else {
-        // Fallback for other types if needed, though mostly using png/jpeg
+  if (isSupabaseConfigured && hasSession) {
+    try {
+      let fileBlob: Blob;
+      if (data.mimeType.startsWith('image/')) {
+        fileBlob = await base64ToBlob(data.base64OrUrl, data.mimeType);
+      } else {
         fileBlob = new Blob([data.base64OrUrl], { type: data.mimeType });
+      }
+
+      const fileName = `${userId}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}.png`;
+      const { error: uploadError } = await supabase.storage
+        .from('generated')
+        .upload(fileName, fileBlob, { cacheControl: '3600', upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('generated')
+        .getPublicUrl(fileName);
+
+      const { data: insertedData, error: dbError } = await supabase
+        .from('history')
+        .insert([{
+          user_id: userId,
+          type: data.type,
+          prompt: data.prompt,
+          model: data.model,
+          ratio: data.ratio,
+          file_url: publicUrl
+        }])
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+      return insertedData as HistoryItem;
+    } catch (error: any) {
+      console.warn("Supabase history save failed, falling back to local:", error.message);
     }
-
-    // 2. Upload to Supabase Storage
-    const fileName = `${userId}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('generated')
-      .upload(fileName, fileBlob, {
-        cacheControl: '3600',
-        upsert: false
-      });
-
-    if (uploadError) throw uploadError;
-
-    // 3. Get Public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('generated')
-      .getPublicUrl(fileName);
-
-    // 4. Insert into DB
-    const newItem = {
-      user_id: userId,
-      type: data.type,
-      prompt: data.prompt,
-      model: data.model,
-      ratio: data.ratio,
-      file_url: publicUrl
-    };
-
-    const { data: insertedData, error: dbError } = await supabase
-      .from('history')
-      .insert([newItem])
-      .select()
-      .single();
-
-    if (dbError) throw dbError;
-
-    return insertedData as HistoryItem;
-
-  } catch (error: any) {
-    console.error("Error saving history:", error.message || error);
-    return null;
   }
+
+  // Fallback: Save to localStorage with thumbnail (for "Vào nhanh" users)
+  const thumb = await createThumbnail(data.base64OrUrl, data.mimeType);
+  const localItem: HistoryItem = {
+    id: crypto.randomUUID(),
+    user_id: userId,
+    type: data.type,
+    prompt: data.prompt,
+    model: data.model,
+    ratio: data.ratio,
+    file_url: thumb || `data:${data.mimeType};base64,${data.base64OrUrl.substring(0, 100)}`,
+    created_at: new Date().toISOString()
+  };
+  return saveLocalHistory(localItem);
 };
 
 export const fetchUserHistory = async (userId: string): Promise<HistoryItem[]> => {
   if (!userId) return [];
-  if (!isSupabaseConfigured) return [];
 
-  const { data, error } = await supabase
-    .from('history')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  // Try Supabase first
+  const hasSession = await hasSupabaseSession();
 
-  if (error) {
-    console.error("Error fetching history:", error.message || error);
-    return [];
+  if (isSupabaseConfigured && hasSession) {
+    const { data, error } = await supabase
+      .from('history')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (!error && data && data.length > 0) {
+      return data as HistoryItem[];
+    }
   }
-  return data as HistoryItem[];
+
+  // Fallback: Read from localStorage
+  return getLocalHistory(userId);
 };

@@ -2,9 +2,10 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
+import { ChatMessage } from './components/ChatMessage';
 
 import { EditImageModal } from './components/EditImageModal';
-import { AppMode, AspectRatio, BatchItem, BatchModel, BatchSubMode, HistoryItem, MockupType, TargetLanguage, ImageJob, GenderOption } from './types';
+import { AppMode, AspectRatio, BatchItem, BatchModel, BatchSubMode, HistoryItem, MockupType, TargetLanguage, ImageJob, GenderOption, Message, Sender } from './types';
 import { editImage, generatePromptSuggestions, generateBatchVariation, setGlobalApiKey, localizeImage, checkSpelling, generateDistinctPrompts } from './services/geminiService';
 import { isSupabaseConfigured, supabase } from './services/supabaseClient';
 import { signInWithEmail, signUpWithEmail, signOut } from './services/authService';
@@ -80,6 +81,13 @@ export default function App() {
     const [localizeProcessing, setLocalizeProcessing] = useState(false);
     const [localizeEditJob, setLocalizeEditJob] = useState<ImageJob | null>(null);
     const [isLocalizeEditing, setIsLocalizeEditing] = useState(false);
+
+    // Magic Edit (Chat-based Image Editing)
+    const [editMessages, setEditMessages] = useState<Message[]>([]);
+    const [editImageUrl, setEditImageUrl] = useState<string | null>(null);
+    const [editPrompt, setEditPrompt] = useState('');
+    const [editProcessing, setEditProcessing] = useState(false);
+    const editFileRef = useRef<HTMLInputElement>(null);
 
     const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
@@ -240,10 +248,12 @@ export default function App() {
     };
 
     const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
-        if (mode !== AppMode.LOCALIZE_STUDIO) return;
         const items = e.clipboardData.items; const files: File[] = [];
         for (let i = 0; i < items.length; i++) { if (items[i].type.indexOf('image') !== -1) { const file = items[i].getAsFile(); if (file) files.push(file); } }
-        if (files.length > 0) { e.preventDefault(); await handleLocalizeFiles(files); }
+        if (files.length === 0) return;
+        e.preventDefault();
+        if (mode === AppMode.LOCALIZE_STUDIO) { await handleLocalizeFiles(files); }
+        else if (mode === AppMode.BATCH_STUDIO) { processFile(files[0], 'variation'); }
     }, [mode]);
 
     const processFile = (file: File, target: string) => {
@@ -775,12 +785,14 @@ export default function App() {
                                         {/* Reference Image Upload */}
                                         <div
                                             onClick={() => document.getElementById('var-upload')?.click()}
-                                            className="w-full h-44 border-2 border-dashed rounded-xl flex items-center justify-center cursor-pointer overflow-hidden relative transition-all group"
+                                            tabIndex={0}
+                                            className="w-full h-44 border-2 border-dashed rounded-xl flex items-center justify-center cursor-pointer overflow-hidden relative transition-all group focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none"
                                             style={{ borderColor: 'rgba(99,102,241,0.25)', background: 'rgba(99,102,241,0.03)' }}
                                             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(99,102,241,0.5)'; (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.06)'; }}
                                             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(99,102,241,0.25)'; (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.03)'; }}
                                             onDrop={(e) => handleDrop(e, 'variation')}
                                             onDragOver={handleDragOver}
+                                            onPaste={(e) => { const items = e.clipboardData.items; for (let i = 0; i < items.length; i++) { if (items[i].type.indexOf('image') !== -1) { const file = items[i].getAsFile(); if (file) { e.preventDefault(); processFile(file, 'variation'); break; } } } }}
                                         >
                                             {variationPreview ? (
                                                 <>
@@ -798,7 +810,7 @@ export default function App() {
                                                     <p className="text-sm text-slate-400 font-medium">
                                                         {batchSettings.subMode === 'VARIATION' ? "Kéo thả ảnh mẫu" : "Ảnh gốc (Tùy chọn)"}
                                                     </p>
-                                                    <p className="text-[10px] text-slate-600 mt-1">Hoặc click để chọn file</p>
+                                                    <p className="text-[10px] text-slate-600 mt-1">Click, drag & drop, or Ctrl+V to paste</p>
                                                 </div>
                                             )}
                                             <input id="var-upload" type="file" className="hidden" onChange={(e) => handleFileSelect(e, 'variation')} accept="image/*" />
@@ -808,9 +820,11 @@ export default function App() {
                                         {batchSettings.subMode === 'VARIATION' && (
                                             <div
                                                 onClick={() => faceInputRef.current?.click()}
-                                                className="w-full h-16 border border-dashed border-slate-700 rounded-lg flex items-center gap-3 px-4 cursor-pointer hover:border-purple-500 hover:bg-white/5 overflow-hidden transition-all"
+                                                tabIndex={0}
+                                                className="w-full h-16 border border-dashed border-slate-700 rounded-lg flex items-center gap-3 px-4 cursor-pointer hover:border-purple-500 hover:bg-white/5 overflow-hidden transition-all focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none"
                                                 onDrop={(e) => handleDrop(e, 'face')}
                                                 onDragOver={handleDragOver}
+                                                onPaste={(e) => { const items = e.clipboardData.items; for (let i = 0; i < items.length; i++) { if (items[i].type.indexOf('image') !== -1) { const file = items[i].getAsFile(); if (file) { e.preventDefault(); processFile(file, 'face'); break; } } } }}
                                             >
                                                 {facePreview ? (
                                                     <><img src={facePreview} className="w-10 h-10 rounded-lg object-cover" /><span className="text-xs text-slate-400">Face swap đã upload</span></>
@@ -829,16 +843,20 @@ export default function App() {
                                         <div className="grid grid-cols-2 gap-3">
                                             <div
                                                 onClick={() => mockupSourceInputRef.current?.click()}
-                                                className="h-28 border border-dashed border-slate-600 rounded-xl flex items-center justify-center cursor-pointer hover:border-purple-500 overflow-hidden"
+                                                tabIndex={0}
+                                                className="h-28 border border-dashed border-slate-600 rounded-xl flex items-center justify-center cursor-pointer hover:border-purple-500 overflow-hidden focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none"
                                                 onDrop={(e) => handleDrop(e, 'mockup-source')} onDragOver={handleDragOver}
+                                                onPaste={(e) => { const items = e.clipboardData.items; for (let i = 0; i < items.length; i++) { if (items[i].type.indexOf('image') !== -1) { const file = items[i].getAsFile(); if (file) { e.preventDefault(); processFile(file, 'mockup-source'); break; } } } }}
                                             >
                                                 {mockupSourcePreview ? <img src={mockupSourcePreview} className="w-full h-full object-cover" /> : <div className="text-center"><ImagePlus size={20} className="mx-auto text-slate-500 mb-1" /><span className="text-[10px] text-slate-500">Thiết kế</span></div>}
                                                 <input ref={mockupSourceInputRef} type="file" className="hidden" onChange={(e) => handleFileSelect(e, 'mockup-source')} accept="image/*" />
                                             </div>
                                             <div
                                                 onClick={() => mockupTargetInputRef.current?.click()}
-                                                className="h-28 border border-dashed border-slate-600 rounded-xl flex items-center justify-center cursor-pointer hover:border-purple-500 overflow-hidden relative"
+                                                tabIndex={0}
+                                                className="h-28 border border-dashed border-slate-600 rounded-xl flex items-center justify-center cursor-pointer hover:border-purple-500 overflow-hidden relative focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none"
                                                 onDrop={(e) => handleDrop(e, 'mockup-target')} onDragOver={handleDragOver}
+                                                onPaste={(e) => { const items = e.clipboardData.items; const files: File[] = []; for (let i = 0; i < items.length; i++) { if (items[i].type.indexOf('image') !== -1) { const file = items[i].getAsFile(); if (file) files.push(file); } } if (files.length > 0) { e.preventDefault(); handleMockupTargetFiles(files); } }}
                                             >
                                                 {mockupTargetPreviews.length > 0 ? (
                                                     <div className="w-full h-full grid grid-cols-2 gap-1 p-1">{mockupTargetPreviews.slice(0, 4).map((p, i) => <img key={i} src={p} className="w-full h-full object-cover rounded-sm" />)}</div>
@@ -1041,6 +1059,107 @@ export default function App() {
         )
     };
 
+    // Magic Edit — Send Message
+    const handleEditSend = async () => {
+        if (!editPrompt.trim() || editProcessing) return;
+        const userMsg: Message = { id: Date.now().toString(), sender: Sender.USER, text: editPrompt, timestamp: Date.now() };
+        setEditMessages(prev => [...prev, userMsg]);
+        const currentPrompt = editPrompt;
+        setEditPrompt('');
+        setEditProcessing(true);
+        try {
+            const lastAiImage = [...editMessages].reverse().find(m => m.sender === Sender.AI && m.imageUrl)?.imageUrl;
+            const sourceImage = lastAiImage || editImageUrl;
+            if (!sourceImage) { setEditMessages(prev => [...prev, { id: Date.now().toString(), sender: Sender.AI, text: 'Please upload an image first.', isError: true, timestamp: Date.now() }]); setEditProcessing(false); return; }
+            const result = await editImage(sourceImage, currentPrompt);
+            if (result) {
+                setEditMessages(prev => [...prev, { id: Date.now().toString(), sender: Sender.AI, text: '✨ Edit applied!', imageUrl: result, timestamp: Date.now() }]);
+            } else {
+                setEditMessages(prev => [...prev, { id: Date.now().toString(), sender: Sender.AI, text: 'Failed to generate edit. Try a different prompt.', isError: true, timestamp: Date.now() }]);
+            }
+        } catch (err: any) {
+            setEditMessages(prev => [...prev, { id: Date.now().toString(), sender: Sender.AI, text: `Error: ${err.message || 'Unknown error'}`, isError: true, timestamp: Date.now() }]);
+        }
+        setEditProcessing(false);
+    };
+
+    const handleEditUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files?.[0]) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const res = reader.result as string;
+                setEditImageUrl(res);
+                setEditMessages(prev => [...prev, {
+                    id: Date.now().toString(), sender: Sender.USER, text: 'Uploaded an image for editing.', imageUrl: res, timestamp: Date.now()
+                }]);
+            };
+            reader.readAsDataURL(e.target.files[0]);
+        }
+    };
+
+    const renderMagicEdit = () => (
+        <div className="flex flex-col h-full">
+            {/* Chat History */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {editMessages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                        <div className="w-20 h-20 bg-gradient-to-br from-rose-500 to-pink-600 rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-rose-500/20">
+                            <Wand2 size={36} className="text-white" />
+                        </div>
+                        <h2 className="text-xl font-bold text-white mb-2">Magic Edit</h2>
+                        <p className="text-slate-400 text-sm max-w-md mb-6">Upload an image and describe what you want to change. AI will edit it for you in real-time.</p>
+                        <button
+                            onClick={() => editFileRef.current?.click()}
+                            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg"
+                        >
+                            <Upload size={18} /> Upload Image to Edit
+                        </button>
+                        <input ref={editFileRef} type="file" className="hidden" accept="image/*" onChange={handleEditUpload} />
+                    </div>
+                ) : (
+                    <>
+                        {editMessages.map(msg => (
+                            <ChatMessage key={msg.id} message={msg} />
+                        ))}
+                        <div ref={messagesEndRef} />
+                    </>
+                )}
+            </div>
+
+            {/* Input Bar */}
+            {editMessages.length > 0 && (
+                <div className="shrink-0 border-t border-white/5 p-4" style={{ background: 'rgba(10,10,18,0.9)' }}>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => editFileRef.current?.click()}
+                            className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all shrink-0"
+                            title="Upload new image"
+                        >
+                            <ImagePlus size={18} />
+                        </button>
+                        <input ref={editFileRef} type="file" className="hidden" accept="image/*" onChange={handleEditUpload} />
+                        <input
+                            type="text"
+                            value={editPrompt}
+                            onChange={e => setEditPrompt(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleEditSend()}
+                            placeholder="Describe your edit... (e.g. 'change sky to sunset')"
+                            className="flex-1 bg-slate-800/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 outline-none"
+                            disabled={editProcessing}
+                        />
+                        <button
+                            onClick={handleEditSend}
+                            disabled={editProcessing || !editPrompt.trim()}
+                            className="p-3 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl hover:opacity-90 transition-all disabled:opacity-30 shrink-0"
+                        >
+                            {editProcessing ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+
     // LOGIN GATE — Show login screen if not authenticated
     if (!user) {
         return (
@@ -1056,9 +1175,7 @@ export default function App() {
                 <div className="relative z-10 w-full max-w-sm mx-4">
                     {/* Logo / Brand */}
                     <div className="text-center mb-8">
-                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl shadow-lg shadow-indigo-500/30 mb-4" style={{ background: 'linear-gradient(135deg, #6366f1 0%, #f97316 100%)' }}>
-                            <span className="text-2xl font-black text-white">M</span>
-                        </div>
+                        <img src="/logo.png" alt="iKame" className="w-16 h-16 rounded-2xl shadow-lg shadow-orange-500/30 object-cover mx-auto mb-4" />
                         <h1 className="text-2xl font-bold text-white tracking-tight">Media Studio</h1>
                         <p className="text-sm text-slate-400 mt-1">AI-powered creative tools</p>
                     </div>
@@ -1067,8 +1184,8 @@ export default function App() {
                     <div className="backdrop-blur-xl border rounded-2xl p-6 shadow-2xl shadow-black/50" style={{ background: 'rgba(13,13,20,0.9)', borderColor: 'rgba(99,102,241,0.15)' }}>
                         {/* Tabs */}
                         <div className="flex bg-slate-950/80 p-1 rounded-xl mb-5">
-                            <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${authMode === 'login' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Đăng nhập</button>
-                            <button onClick={() => { setAuthMode('register'); setAuthError(''); }} className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${authMode === 'register' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Đăng ký</button>
+                            <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${authMode === 'login' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Sign In</button>
+                            <button onClick={() => { setAuthMode('register'); setAuthError(''); }} className={`flex-1 py-2 text-sm rounded-lg font-medium transition-all ${authMode === 'register' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'}`}>Sign Up</button>
                         </div>
 
                         {/* Form */}
@@ -1079,33 +1196,33 @@ export default function App() {
                             </div>
                             <div className="relative">
                                 <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                                <input type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="Mật khẩu (tối thiểu 6 ký tự)" onKeyDown={e => e.key === 'Enter' && handleSupabaseAuth()} className="w-full bg-slate-950/60 border border-white/10 rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 outline-none transition-all" />
+                                <input type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="Password (min 6 characters)" onKeyDown={e => e.key === 'Enter' && handleSupabaseAuth()} className="w-full bg-slate-950/60 border border-white/10 rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 outline-none transition-all" />
                             </div>
 
                             {authError && <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2.5">{authError}</p>}
 
                             <button onClick={handleSupabaseAuth} disabled={authLoading || !authEmail || !authPassword} className="w-full flex items-center justify-center gap-2 py-3 text-white rounded-xl text-sm font-bold shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 disabled:opacity-50 disabled:shadow-none transition-all" style={{ background: 'linear-gradient(135deg, #f97316 0%, #ef4444 50%, #ec4899 100%)' }}>
                                 {authLoading ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
-                                {authMode === 'register' ? 'Tạo tài khoản' : 'Đăng nhập'}
+                                {authMode === 'register' ? 'Create Account' : 'Sign In'}
                             </button>
                         </div>
 
                         {/* Divider */}
                         <div className="flex items-center gap-3 my-5">
                             <div className="flex-1 h-px bg-white/10"></div>
-                            <span className="text-[10px] text-slate-500 uppercase tracking-wider">hoặc</span>
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wider">or</span>
                             <div className="flex-1 h-px bg-white/10"></div>
                         </div>
 
                         {/* Quick Login */}
                         <div className="space-y-2">
                             <div className="flex gap-2">
-                                <input type="text" value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="Tên hiển thị..." className="flex-1 bg-slate-950/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-purple-500/50 outline-none" />
+                                <input type="text" value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="Display name..." className="flex-1 bg-slate-950/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-purple-500/50 outline-none" />
                                 <button onClick={() => { if (loginName.trim()) handleLoginUser(loginName) }} disabled={!loginName.trim()} className="px-4 py-2.5 bg-slate-800 text-white rounded-xl text-sm font-medium hover:bg-slate-700 disabled:opacity-30 transition-all shrink-0">
-                                    Vào nhanh
+                                    Quick Login
                                 </button>
                             </div>
-                            <p className="text-[10px] text-slate-600 text-center">Đăng nhập nhanh — dữ liệu lưu local, không đồng bộ cloud.</p>
+                            <p className="text-[10px] text-slate-600 text-center">Quick login — data stored locally, no cloud sync.</p>
                         </div>
                     </div>
 
@@ -1131,8 +1248,8 @@ export default function App() {
                                             'Batch Studio'}
                     </span></div>
                     <div className="flex items-center gap-2">
-                        <button onClick={handleReloadUI} className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-white/5" title="Tải lại"><RotateCcw size={18} /></button>
-                        <button onClick={() => setShowSettings(true)} className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-white/5" title="Cài đặt"><Settings size={18} /></button>
+                        <button onClick={handleReloadUI} className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-white/5" title="Reload"><RotateCcw size={18} /></button>
+                        <button onClick={() => setShowSettings(true)} className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-white/5" title="Settings"><Settings size={18} /></button>
                     </div>
                 </header>
                 <main className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
@@ -1141,28 +1258,29 @@ export default function App() {
                             mode === AppMode.AI_THEME_CHANGER ? <ThemeChanger /> :
                                 mode === AppMode.ASO_STUDIO ? <ASOGenerator /> :
                                     mode === AppMode.AI_FUSION ? <AIFusion /> :
-                                        <div className="flex items-center justify-center h-full text-slate-500"><Wand2 size={48} className="opacity-30" /></div>}
+                                        mode === AppMode.IMAGE_EDIT ? renderMagicEdit() :
+                                            <div className="flex items-center justify-center h-full text-slate-500"><Wand2 size={48} className="opacity-30" /></div>}
                 </main>
             </div>
             {showSettings && (
                 <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setShowSettings(false)}>
                     <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 relative" onClick={e => e.stopPropagation()}>
                         <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white"><X size={20} /></button>
-                        <h2 className="text-xl font-bold text-white mb-6">Cài đặt</h2>
+                        <h2 className="text-xl font-bold text-white mb-6">Settings</h2>
                         <div className="mb-6 pb-6 border-b border-slate-800">
-                            <h3 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2"><User size={14} /> Tài khoản</h3>
+                            <h3 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2"><User size={14} /> Account</h3>
                             {user ? (
                                 <div className="bg-slate-800/50 rounded-xl p-3 flex items-center justify-between">
                                     <div className="flex items-center gap-3"><img src={user.avatarUrl} className="w-10 h-10 rounded-full border border-slate-600" /><div><div className="font-bold text-sm text-white">{user.name}</div><div className="text-[10px] text-green-400 flex items-center gap-1"><span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span> Online</div></div></div>
-                                    <button onClick={handleLogout} className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors" title="Đăng xuất"><LogOut size={18} /></button>
+                                    <button onClick={handleLogout} className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors" title="Sign Out"><LogOut size={18} /></button>
                                 </div>
                             ) : (
                                 <div className="space-y-3">
                                     {isSupabaseConfigured ? (
                                         <>
                                             <div className="flex bg-slate-950 p-0.5 rounded-lg mb-1">
-                                                <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className={`flex-1 py-1.5 text-xs rounded transition-all ${authMode === 'login' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}>Đăng nhập</button>
-                                                <button onClick={() => { setAuthMode('register'); setAuthError(''); }} className={`flex-1 py-1.5 text-xs rounded transition-all ${authMode === 'register' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}>Đăng ký</button>
+                                                <button onClick={() => { setAuthMode('login'); setAuthError(''); }} className={`flex-1 py-1.5 text-xs rounded transition-all ${authMode === 'login' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}>Sign In</button>
+                                                <button onClick={() => { setAuthMode('register'); setAuthError(''); }} className={`flex-1 py-1.5 text-xs rounded transition-all ${authMode === 'register' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}>Sign Up</button>
                                             </div>
                                             <div className="relative">
                                                 <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -1170,31 +1288,31 @@ export default function App() {
                                             </div>
                                             <div className="relative">
                                                 <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                                                <input type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="Mật khẩu (tối thiểu 6 ký tự)" onKeyDown={e => e.key === 'Enter' && handleSupabaseAuth()} className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-10 pr-3 py-2.5 text-sm text-white focus:border-purple-500 outline-none" />
+                                                <input type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="Password (min 6 characters)" onKeyDown={e => e.key === 'Enter' && handleSupabaseAuth()} className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-10 pr-3 py-2.5 text-sm text-white focus:border-purple-500 outline-none" />
                                             </div>
                                             {authError && <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{authError}</p>}
                                             <button onClick={handleSupabaseAuth} disabled={authLoading || !authEmail || !authPassword} className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-sm font-bold hover:from-purple-500 disabled:opacity-50 transition-all">
                                                 {authLoading ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
-                                                {authMode === 'register' ? 'Tạo tài khoản' : 'Đăng nhập'}
+                                                {authMode === 'register' ? 'Create Account' : 'Sign In'}
                                             </button>
-                                            <p className="text-[10px] text-slate-500 text-center">Đăng nhập để lưu lịch sử lên cloud.</p>
+                                            <p className="text-[10px] text-slate-500 text-center">Sign in to sync history to cloud.</p>
                                         </>
                                     ) : (
                                         <>
-                                            <input type="text" value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="Nhập tên hiển thị..." className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-white focus:border-purple-500 outline-none" />
-                                            <button onClick={() => { if (loginName.trim()) handleLoginUser(loginName) }} disabled={!loginName.trim()} className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50"><LogIn size={16} /> Đăng nhập nhanh</button>
+                                            <input type="text" value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="Enter display name..." className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-white focus:border-purple-500 outline-none" />
+                                            <button onClick={() => { if (loginName.trim()) handleLoginUser(loginName) }} disabled={!loginName.trim()} className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50"><LogIn size={16} /> Quick Login</button>
                                         </>
                                     )}
                                 </div>
                             )}
                         </div>
                         <div className="mb-6">
-                            <h3 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2"><Key size={14} /> Cấu hình AI</h3>
+                            <h3 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2"><Key size={14} /> AI Configuration</h3>
                             <label className="block text-xs text-slate-400 mb-1">Gemini API Key</label>
-                            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Nhập khóa API..." className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-white focus:border-purple-500 outline-none" />
-                            <p className="text-[10px] text-slate-600 mt-2">Khóa API được lưu trữ cục bộ trên trình duyệt của bạn.</p>
+                            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Paste your API key..." className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-white focus:border-purple-500 outline-none" />
+                            <p className="text-[10px] text-slate-600 mt-2">Stored locally in your browser — never sent to any server.</p>
                         </div>
-                        <button onClick={handleSaveSettings} className="w-full py-2.5 text-white rounded-lg font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition-all" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>Lưu thay đổi</button>
+                        <button onClick={handleSaveSettings} className="w-full py-2.5 text-white rounded-lg font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition-all" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>Save Changes</button>
                     </div>
                 </div>
             )}

@@ -58,9 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentMode, setMode }) => {
     <div className="w-[220px] flex flex-col h-full shrink-0" style={{ background: '#0d0d14' }}>
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 mb-2">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-white text-lg shadow-lg relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #6366f1 0%, #f97316 100%)' }}>
-          M
-        </div>
+        <img src="/logo.png" alt="iKame" className="w-10 h-10 rounded-xl shadow-lg object-cover" />
         <div className="min-w-0">
           <div className="text-sm font-black text-white tracking-tight">Media Studio</div>
           <div className="text-[9px] text-slate-500 font-medium">AI Creative Tools</div>
