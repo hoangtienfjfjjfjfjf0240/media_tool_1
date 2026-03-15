@@ -1416,23 +1416,7 @@ export default function App() {
                             </button>
                         </div>
 
-                        {/* Divider */}
-                        <div className="flex items-center gap-3 my-5">
-                            <div className="flex-1 h-px bg-white/10"></div>
-                            <span className="text-[10px] text-slate-500 uppercase tracking-wider">or</span>
-                            <div className="flex-1 h-px bg-white/10"></div>
-                        </div>
 
-                        {/* Quick Login */}
-                        <div className="space-y-2">
-                            <div className="flex gap-2">
-                                <input type="text" value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="Display name..." className="flex-1 bg-slate-950/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-purple-500/50 outline-none" />
-                                <button onClick={() => { if (loginName.trim()) handleLoginUser(loginName) }} disabled={!loginName.trim()} className="px-4 py-2.5 bg-slate-800 text-white rounded-xl text-sm font-medium hover:bg-slate-700 disabled:opacity-30 transition-all shrink-0">
-                                    Quick Login
-                                </button>
-                            </div>
-                            <p className="text-[10px] text-slate-600 text-center">Quick login — data stored locally, no cloud sync.</p>
-                        </div>
                     </div>
 
                     {/* Footer */}
