@@ -478,14 +478,20 @@ export default function App() {
         // --- STEP 1: Smart Prompt Expansion from Idea ---
         if (variationPrompt.trim()) {
             if (batchSettings.subMode === 'TEXT_TO_IMAGE') {
-                // DIRECT MODE: SKIP AI EXPANSION
-                // Just replicate the raw user prompt for the number of requested images.
-                itemsToProcess = Array(batchSettings.count).fill(null).map(() => ({
-                    id: Math.random().toString(36).substring(7),
-                    prompt: variationPrompt,
-                    status: 'pending' as const
-                }));
-                setGeneratedPrompts(itemsToProcess);
+                // Check if AI-suggested prompts already exist (from handleSuggestPrompts)
+                const hasSuggestedPrompts = generatedPrompts.length > 0 && generatedPrompts.some(p => p.status === 'pending' && p.prompt !== variationPrompt);
+                if (hasSuggestedPrompts) {
+                    // USE EXISTING AI-SUGGESTED PROMPTS — don't overwrite them!
+                    itemsToProcess = [...generatedPrompts];
+                } else {
+                    // No AI suggestions — use raw user prompt for all images
+                    itemsToProcess = Array(batchSettings.count).fill(null).map(() => ({
+                        id: Math.random().toString(36).substring(7),
+                        prompt: variationPrompt,
+                        status: 'pending' as const
+                    }));
+                    setGeneratedPrompts(itemsToProcess);
+                }
             } else {
                 // VARIATION MODE: USE AI EXPANSION (generateDistinctPrompts)
                 try {
