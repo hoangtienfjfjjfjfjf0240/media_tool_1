@@ -88,7 +88,7 @@ export default function App() {
     const [editPrompt, setEditPrompt] = useState('');
     const [editProcessing, setEditProcessing] = useState(false);
     const [editChatHistory, setEditChatHistory] = useState<ChatTurn[]>([]);
-    const [editPendingImage, setEditPendingImage] = useState<string | null>(null);
+    const [editPendingImages, setEditPendingImages] = useState<string[]>([]);
     const editFileRef = useRef<HTMLInputElement>(null);
 
     const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
@@ -1066,27 +1066,35 @@ export default function App() {
 
     // Magic Edit — Send Message (Multi-turn Gemini-style)
     const handleEditSend = async () => {
-        if ((!editPrompt.trim() && !editPendingImage) || editProcessing) return;
-        const currentPrompt = editPrompt.trim() || (editPendingImage ? 'Edit this image' : '');
-        const currentImage = editPendingImage;
+        if ((!editPrompt.trim() && editPendingImages.length === 0) || editProcessing) return;
+        const currentPrompt = editPrompt.trim() || (editPendingImages.length > 0 ? 'Edit these images' : '');
+        const currentImages = [...editPendingImages];
 
-        // Build user message with optional image
+        // Build user messages — show first image in main msg, rest as separate
         const userMsg: Message = {
             id: Date.now().toString(), sender: Sender.USER, text: currentPrompt,
-            imageUrl: currentImage || undefined, timestamp: Date.now()
+            imageUrl: currentImages[0] || undefined, timestamp: Date.now()
         };
-        setEditMessages(prev => [...prev, userMsg]);
+        setEditMessages(prev => {
+            const msgs = [...prev, userMsg];
+            // Add extra image messages for 2nd, 3rd, etc.
+            for (let i = 1; i < currentImages.length; i++) {
+                msgs.push({ id: `${Date.now()}_${i}`, sender: Sender.USER, text: '', imageUrl: currentImages[i], timestamp: Date.now() });
+            }
+            return msgs;
+        });
         setEditPrompt('');
-        setEditPendingImage(null);
+        setEditPendingImages([]);
         setEditProcessing(true);
 
         try {
-            // Include pending image in history before calling API
-            const historyWithImage = currentImage
-                ? [...editChatHistory, { role: 'user' as const, text: '', imageDataUrl: currentImage }]
-                : editChatHistory;
+            // Include all pending images in history
+            const historyWithImages = [...editChatHistory];
+            for (const img of currentImages) {
+                historyWithImages.push({ role: 'user' as const, text: '', imageDataUrl: img });
+            }
 
-            const result = await magicEditChat(historyWithImage, currentPrompt);
+            const result = await magicEditChat(historyWithImages, currentPrompt);
 
             const aiMsg: Message = {
                 id: (Date.now() + 1).toString(),
@@ -1099,8 +1107,11 @@ export default function App() {
 
             // Update chat history
             const newHistory = [...editChatHistory];
-            if (currentImage) {
-                newHistory.push({ role: 'user' as const, text: currentPrompt, imageDataUrl: currentImage });
+            if (currentImages.length > 0) {
+                newHistory.push({ role: 'user' as const, text: currentPrompt, imageDataUrl: currentImages[0] });
+                for (let i = 1; i < currentImages.length; i++) {
+                    newHistory.push({ role: 'user' as const, text: '', imageDataUrl: currentImages[i] });
+                }
             } else {
                 newHistory.push({ role: 'user' as const, text: currentPrompt });
             }
@@ -1117,12 +1128,15 @@ export default function App() {
     };
 
     const handleEditUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files?.[0]) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setEditPendingImage(reader.result as string);
-            };
-            reader.readAsDataURL(e.target.files[0]);
+        if (e.target.files && e.target.files.length > 0) {
+            const files: File[] = Array.from(e.target.files);
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    setEditPendingImages(prev => [...prev, reader.result as string]);
+                };
+                reader.readAsDataURL(file);
+            });
         }
     };
 
@@ -1135,7 +1149,7 @@ export default function App() {
                     e.preventDefault();
                     const reader = new FileReader();
                     reader.onloadend = () => {
-                        setEditPendingImage(reader.result as string);
+                        setEditPendingImages(prev => [...prev, reader.result as string]);
                     };
                     reader.readAsDataURL(file);
                     break;
@@ -1150,7 +1164,7 @@ export default function App() {
         setEditImageUrl(null);
         setEditPrompt('');
         setEditProcessing(false);
-        setEditPendingImage(null);
+        setEditPendingImages([]);
     };
     const [editDragOver, setEditDragOver] = useState(false);
 
@@ -1164,7 +1178,7 @@ export default function App() {
             if (file.type.startsWith('image/')) {
                 const reader = new FileReader();
                 reader.onloadend = () => {
-                    setEditPendingImage(reader.result as string);
+                    setEditPendingImages(prev => [...prev, reader.result as string]);
                 };
                 reader.readAsDataURL(file);
                 return;
@@ -1174,7 +1188,7 @@ export default function App() {
         const html = e.dataTransfer.getData('text/html');
         const match = html?.match(/src="([^"]+)"/);
         if (match && match[1]?.startsWith('data:image')) {
-            setEditPendingImage(match[1]);
+            setEditPendingImages(prev => [...prev, match[1]]);
         }
     };
 
@@ -1305,24 +1319,35 @@ export default function App() {
             {/* Input Bar — Always Visible */}
             <div className="shrink-0 border-t border-white/5" style={{ background: 'rgba(10,10,18,0.95)' }}>
                 <div className="max-w-3xl mx-auto px-4 py-3">
-                    {/* Pending Image Preview */}
-                    {editPendingImage && (
-                        <div className="mb-2 flex items-start gap-2">
-                            <div className="relative group">
-                                <img
-                                    src={editPendingImage}
-                                    alt="Preview"
-                                    className="h-20 rounded-xl border border-white/10 object-cover cursor-pointer"
-                                    onClick={() => setViewingImage({ url: editPendingImage })}
-                                />
+                    {/* Pending Images Preview */}
+                    {editPendingImages.length > 0 && (
+                        <div className="mb-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {editPendingImages.map((img, idx) => (
+                                    <div key={idx} className="relative group">
+                                        <img
+                                            src={img}
+                                            alt={`Preview ${idx + 1}`}
+                                            className="h-16 w-16 rounded-lg border border-white/10 object-cover cursor-pointer hover:border-rose-500/50 transition-all"
+                                            onClick={() => setViewingImage({ url: img })}
+                                        />
+                                        <button
+                                            onClick={() => setEditPendingImages(prev => prev.filter((_, i) => i !== idx))}
+                                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-400 text-white rounded-full flex items-center justify-center text-xs shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
+                                ))}
                                 <button
-                                    onClick={() => setEditPendingImage(null)}
-                                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-400 text-white rounded-full flex items-center justify-center text-xs shadow-lg"
+                                    onClick={() => editFileRef.current?.click()}
+                                    className="h-16 w-16 rounded-lg border border-dashed border-white/20 hover:border-rose-500/50 flex items-center justify-center text-slate-500 hover:text-rose-400 transition-all"
+                                    title="Add more images"
                                 >
-                                    ×
+                                    <ImagePlus size={18} />
                                 </button>
                             </div>
-                            <span className="text-xs text-slate-500 mt-1">Image attached • Type a prompt and send</span>
+                            <span className="text-xs text-slate-500 mt-1 block">{editPendingImages.length} image{editPendingImages.length > 1 ? 's' : ''} attached • Type a prompt and send</span>
                         </div>
                     )}
                     <div className="flex items-center gap-2">
@@ -1342,13 +1367,13 @@ export default function App() {
                         >
                             <ImagePlus size={16} />
                         </button>
-                        <input ref={editFileRef} type="file" className="hidden" accept="image/*" onChange={handleEditUpload} />
+                        <input ref={editFileRef} type="file" className="hidden" accept="image/*" multiple onChange={handleEditUpload} />
                         <input
                             type="text"
                             value={editPrompt}
                             onChange={e => setEditPrompt(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleEditSend()}
-                            placeholder={editPendingImage ? "Describe what to do with this image..." : "Type or drop image here..."}
+                            placeholder={editPendingImages.length > 0 ? "Describe what to do with these images..." : "Type or drop images here..."}
                             className="flex-1 bg-slate-800/60 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/20 outline-none"
                             disabled={editProcessing}
                             onPaste={handleEditPaste}
@@ -1358,7 +1383,7 @@ export default function App() {
                         />
                         <button
                             onClick={handleEditSend}
-                            disabled={editProcessing || (!editPrompt.trim() && !editPendingImage)}
+                            disabled={editProcessing || (!editPrompt.trim() && editPendingImages.length === 0)}
                             className="p-2.5 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl hover:opacity-90 transition-all disabled:opacity-30 shrink-0"
                         >
                             {editProcessing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
