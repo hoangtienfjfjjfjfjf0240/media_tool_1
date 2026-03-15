@@ -1151,9 +1151,60 @@ export default function App() {
         setEditPrompt('');
         setEditProcessing(false);
     };
+    const [editDragOver, setEditDragOver] = useState(false);
+
+    const handleEditDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setEditDragOver(false);
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            const file = files[0];
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const res = reader.result as string;
+                    setEditImageUrl(res);
+                    setEditMessages(prev => [...prev, {
+                        id: Date.now().toString(), sender: Sender.USER, text: '📎 Dropped image', imageUrl: res, timestamp: Date.now()
+                    }]);
+                    setEditChatHistory(prev => [...prev, { role: 'user' as const, text: 'Here is a dropped image for you to work with.', imageDataUrl: res }]);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+        // Handle dragged image URLs (e.g. from other chat)
+        const html = e.dataTransfer.getData('text/html');
+        const match = html?.match(/src="([^"]+)"/);
+        if (match && match[1]?.startsWith('data:image')) {
+            const res = match[1];
+            setEditImageUrl(res);
+            setEditMessages(prev => [...prev, {
+                id: Date.now().toString(), sender: Sender.USER, text: '📎 Dropped image', imageUrl: res, timestamp: Date.now()
+            }]);
+            setEditChatHistory(prev => [...prev, { role: 'user' as const, text: 'Here is a dropped image for you to work with.', imageDataUrl: res }]);
+        }
+    };
 
     const renderMagicEdit = () => (
-        <div className="flex flex-col h-full" tabIndex={0} onPaste={handleEditPaste}>
+        <div
+            className="flex flex-col h-full relative"
+            tabIndex={0}
+            onPaste={handleEditPaste}
+            onDragOver={e => { e.preventDefault(); e.stopPropagation(); setEditDragOver(true); }}
+            onDragLeave={e => { e.preventDefault(); setEditDragOver(false); }}
+            onDrop={handleEditDrop}
+        >
+            {/* Drop Overlay */}
+            {editDragOver && (
+                <div className="absolute inset-0 z-50 bg-rose-500/10 border-2 border-dashed border-rose-500/50 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                    <div className="text-center">
+                        <Upload size={48} className="text-rose-400 mx-auto mb-3" />
+                        <p className="text-white font-semibold text-lg">Drop image here</p>
+                        <p className="text-slate-400 text-sm">Release to add to chat</p>
+                    </div>
+                </div>
+            )}
             {/* Chat Area */}
             <div className="flex-1 overflow-y-auto">
                 <div className="max-w-3xl mx-auto px-4 py-6">
@@ -1225,10 +1276,10 @@ export default function App() {
                                         {/* Text Bubble */}
                                         {msg.text && (
                                             <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${msg.sender === Sender.USER
-                                                    ? 'bg-blue-600/80 text-white'
-                                                    : msg.isError
-                                                        ? 'bg-red-500/10 border border-red-500/20 text-red-300'
-                                                        : 'bg-slate-800/80 text-slate-200'
+                                                ? 'bg-blue-600/80 text-white'
+                                                : msg.isError
+                                                    ? 'bg-red-500/10 border border-red-500/20 text-red-300'
+                                                    : 'bg-slate-800/80 text-slate-200'
                                                 }`}>
                                                 {msg.text}
                                             </div>
