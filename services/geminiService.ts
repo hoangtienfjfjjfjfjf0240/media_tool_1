@@ -237,58 +237,52 @@ export const magicEditChat = async (
 ): Promise<{ text: string; imageBase64?: string }> => {
     const ai = getAI();
 
-    // Build proper multi-turn contents for Gemini
-    // Send up to 3 most recent images from history + text context from last 8 turns
-    const contents: any[] = [];
+    // Flat single-message approach: all images + context in one user message
+    // Avoids Gemini API consecutive same-role issues
+    const parts: any[] = [];
     const recentHistory = history.slice(-8);
 
-    // Collect up to 3 most recent images (for style reference memory)
-    const MAX_IMAGES = 3;
-    const imageIndices: number[] = [];
-    for (let i = recentHistory.length - 1; i >= 0 && imageIndices.length < MAX_IMAGES; i--) {
+    // Collect up to 3 most recent images from history
+    const recentImages: string[] = [];
+    for (let i = recentHistory.length - 1; i >= 0 && recentImages.length < 3; i--) {
         if (recentHistory[i].imageDataUrl) {
-            imageIndices.unshift(i); // keep order
+            recentImages.unshift(recentHistory[i].imageDataUrl!);
         }
     }
 
-    // Build conversation turns
-    for (let i = 0; i < recentHistory.length; i++) {
-        const turn = recentHistory[i];
-        const parts: any[] = [];
-
-        // Include image if it's one of the 3 most recent images
-        if (turn.imageDataUrl && imageIndices.includes(i)) {
-            try {
-                const optimized = await processImageForGemini(turn.imageDataUrl);
-                parts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
-            } catch (e) {
-                console.warn('Failed to process history image, skipping');
-            }
-        }
-
-        // Include text
-        if (turn.text) {
-            parts.push({ text: turn.text });
-        }
-
-        if (parts.length > 0) {
-            contents.push({ role: turn.role, parts });
-        }
+    // Add history images first
+    for (const imgUrl of recentImages) {
+        try {
+            const optimized = await processImageForGemini(imgUrl);
+            parts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
+        } catch (e) { console.warn('Failed to process image, skipping'); }
     }
 
-    // Add new user message
-    const newParts: any[] = [];
+    // Add new image if provided
     if (newImageDataUrl) {
         const optimized = await processImageForGemini(newImageDataUrl);
-        newParts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
+        parts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
     }
-    newParts.push({ text: newMessage });
-    contents.push({ role: 'user', parts: newParts });
+
+    // Build text context
+    const contextLines = recentHistory
+        .filter(t => t.text)
+        .map(t => `${t.role === 'user' ? 'User' : 'AI'}: ${t.text}`)
+        .join('\n');
+
+    let fullPrompt = newMessage;
+    if (contextLines) {
+        fullPrompt = `Previous conversation:\n${contextLines}\n\nNew request: ${newMessage}`;
+    }
+    if (recentImages.length > 0) {
+        fullPrompt = `[${recentImages.length} image(s) from conversation are attached above for reference]\n\n${fullPrompt}`;
+    }
+    parts.push({ text: fullPrompt });
 
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-image-preview',
-            contents: contents,
+            contents: { role: 'user', parts },
             config: {
                 systemInstruction: `You are Magic Edit — a creative AI image editor and assistant.
 
