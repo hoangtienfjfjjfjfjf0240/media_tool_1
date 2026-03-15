@@ -88,6 +88,7 @@ export default function App() {
     const [editPrompt, setEditPrompt] = useState('');
     const [editProcessing, setEditProcessing] = useState(false);
     const [editChatHistory, setEditChatHistory] = useState<ChatTurn[]>([]);
+    const [editPendingImage, setEditPendingImage] = useState<string | null>(null);
     const editFileRef = useRef<HTMLInputElement>(null);
 
     const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
@@ -1068,18 +1069,28 @@ export default function App() {
 
     // Magic Edit — Send Message (Multi-turn Gemini-style)
     const handleEditSend = async () => {
-        if (!editPrompt.trim() || editProcessing) return;
-        const currentPrompt = editPrompt;
-        const userMsg: Message = { id: Date.now().toString(), sender: Sender.USER, text: currentPrompt, timestamp: Date.now() };
+        if ((!editPrompt.trim() && !editPendingImage) || editProcessing) return;
+        const currentPrompt = editPrompt.trim() || (editPendingImage ? 'Edit this image' : '');
+        const currentImage = editPendingImage;
+
+        // Build user message with optional image
+        const userMsg: Message = {
+            id: Date.now().toString(), sender: Sender.USER, text: currentPrompt,
+            imageUrl: currentImage || undefined, timestamp: Date.now()
+        };
         setEditMessages(prev => [...prev, userMsg]);
         setEditPrompt('');
+        setEditPendingImage(null);
         setEditProcessing(true);
 
         try {
-            // Call magicEditChat with full conversation history
-            const result = await magicEditChat(editChatHistory, currentPrompt);
+            // Include pending image in history before calling API
+            const historyWithImage = currentImage
+                ? [...editChatHistory, { role: 'user' as const, text: '', imageDataUrl: currentImage }]
+                : editChatHistory;
 
-            // Build AI response message
+            const result = await magicEditChat(historyWithImage, currentPrompt);
+
             const aiMsg: Message = {
                 id: (Date.now() + 1).toString(),
                 sender: Sender.AI,
@@ -1089,12 +1100,15 @@ export default function App() {
             };
             setEditMessages(prev => [...prev, aiMsg]);
 
-            // Update chat history for multi-turn context
-            setEditChatHistory(prev => [
-                ...prev,
-                { role: 'user' as const, text: currentPrompt },
-                { role: 'model' as const, text: result.text || '', imageDataUrl: aiMsg.imageUrl }
-            ]);
+            // Update chat history
+            const newHistory = [...editChatHistory];
+            if (currentImage) {
+                newHistory.push({ role: 'user' as const, text: currentPrompt, imageDataUrl: currentImage });
+            } else {
+                newHistory.push({ role: 'user' as const, text: currentPrompt });
+            }
+            newHistory.push({ role: 'model' as const, text: result.text || '', imageDataUrl: aiMsg.imageUrl });
+            setEditChatHistory(newHistory);
         } catch (err: any) {
             setEditMessages(prev => [...prev, {
                 id: Date.now().toString(), sender: Sender.AI,
@@ -1109,13 +1123,7 @@ export default function App() {
         if (e.target.files?.[0]) {
             const reader = new FileReader();
             reader.onloadend = () => {
-                const res = reader.result as string;
-                setEditImageUrl(res);
-                setEditMessages(prev => [...prev, {
-                    id: Date.now().toString(), sender: Sender.USER, text: '📷 Uploaded an image', imageUrl: res, timestamp: Date.now()
-                }]);
-                // Track in chat history so Gemini sees the image
-                setEditChatHistory(prev => [...prev, { role: 'user' as const, text: 'Here is an image for you to work with.', imageDataUrl: res }]);
+                setEditPendingImage(reader.result as string);
             };
             reader.readAsDataURL(e.target.files[0]);
         }
@@ -1130,12 +1138,7 @@ export default function App() {
                     e.preventDefault();
                     const reader = new FileReader();
                     reader.onloadend = () => {
-                        const res = reader.result as string;
-                        setEditImageUrl(res);
-                        setEditMessages(prev => [...prev, {
-                            id: Date.now().toString(), sender: Sender.USER, text: '📋 Pasted image', imageUrl: res, timestamp: Date.now()
-                        }]);
-                        setEditChatHistory(prev => [...prev, { role: 'user' as const, text: 'Here is a pasted image for you to work with.', imageDataUrl: res }]);
+                        setEditPendingImage(reader.result as string);
                     };
                     reader.readAsDataURL(file);
                     break;
@@ -1150,6 +1153,7 @@ export default function App() {
         setEditImageUrl(null);
         setEditPrompt('');
         setEditProcessing(false);
+        setEditPendingImage(null);
     };
     const [editDragOver, setEditDragOver] = useState(false);
 
@@ -1163,26 +1167,17 @@ export default function App() {
             if (file.type.startsWith('image/')) {
                 const reader = new FileReader();
                 reader.onloadend = () => {
-                    const res = reader.result as string;
-                    setEditImageUrl(res);
-                    setEditMessages(prev => [...prev, {
-                        id: Date.now().toString(), sender: Sender.USER, text: '📎 Dropped image', imageUrl: res, timestamp: Date.now()
-                    }]);
-                    setEditChatHistory(prev => [...prev, { role: 'user' as const, text: 'Here is a dropped image for you to work with.', imageDataUrl: res }]);
+                    setEditPendingImage(reader.result as string);
                 };
                 reader.readAsDataURL(file);
+                return;
             }
         }
         // Handle dragged image URLs (e.g. from other chat)
         const html = e.dataTransfer.getData('text/html');
         const match = html?.match(/src="([^"]+)"/);
         if (match && match[1]?.startsWith('data:image')) {
-            const res = match[1];
-            setEditImageUrl(res);
-            setEditMessages(prev => [...prev, {
-                id: Date.now().toString(), sender: Sender.USER, text: '📎 Dropped image', imageUrl: res, timestamp: Date.now()
-            }]);
-            setEditChatHistory(prev => [...prev, { role: 'user' as const, text: 'Here is a dropped image for you to work with.', imageDataUrl: res }]);
+            setEditPendingImage(match[1]);
         }
     };
 
@@ -1313,6 +1308,26 @@ export default function App() {
             {/* Input Bar — Always Visible */}
             <div className="shrink-0 border-t border-white/5" style={{ background: 'rgba(10,10,18,0.95)' }}>
                 <div className="max-w-3xl mx-auto px-4 py-3">
+                    {/* Pending Image Preview */}
+                    {editPendingImage && (
+                        <div className="mb-2 flex items-start gap-2">
+                            <div className="relative group">
+                                <img
+                                    src={editPendingImage}
+                                    alt="Preview"
+                                    className="h-20 rounded-xl border border-white/10 object-cover cursor-pointer"
+                                    onClick={() => setViewingImage({ url: editPendingImage })}
+                                />
+                                <button
+                                    onClick={() => setEditPendingImage(null)}
+                                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-400 text-white rounded-full flex items-center justify-center text-xs shadow-lg"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            <span className="text-xs text-slate-500 mt-1">Image attached • Type a prompt and send</span>
+                        </div>
+                    )}
                     <div className="flex items-center gap-2">
                         {editMessages.length > 0 && (
                             <button
@@ -1336,7 +1351,7 @@ export default function App() {
                             value={editPrompt}
                             onChange={e => setEditPrompt(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleEditSend()}
-                            placeholder={editMessages.length === 0 ? "Type or drop image here..." : "Describe your edit or drop image..."}
+                            placeholder={editPendingImage ? "Describe what to do with this image..." : "Type or drop image here..."}
                             className="flex-1 bg-slate-800/60 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/20 outline-none"
                             disabled={editProcessing}
                             onPaste={handleEditPaste}
@@ -1346,7 +1361,7 @@ export default function App() {
                         />
                         <button
                             onClick={handleEditSend}
-                            disabled={editProcessing || !editPrompt.trim()}
+                            disabled={editProcessing || (!editPrompt.trim() && !editPendingImage)}
                             className="p-2.5 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl hover:opacity-90 transition-all disabled:opacity-30 shrink-0"
                         >
                             {editProcessing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
