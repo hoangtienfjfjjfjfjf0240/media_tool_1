@@ -1,15 +1,15 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Read from Vite env vars (VITE_ prefix required)
-const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
-const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_KEY || '';
+// Read via process.env (mapped by vite.config.ts define)
+const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_KEY || '';
 
 // Flag for other services to check if Supabase is configured
 export const isSupabaseConfigured = supabaseUrl.startsWith('http') && supabaseKey.length > 0;
 
 if (!isSupabaseConfigured) {
-  console.warn("⚠️ Supabase not configured: Auth and History disabled. Set VITE_SUPABASE_URL and VITE_SUPABASE_KEY in environment variables.");
+  console.warn("⚠️ Supabase not configured: Auth and History disabled. Set SUPABASE_URL and SUPABASE_KEY in environment variables.");
 }
 
 export const supabase = createClient(

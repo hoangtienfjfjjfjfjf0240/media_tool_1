@@ -8,11 +8,10 @@ export const setGlobalApiKey = (key: string) => {
 };
 
 const getAI = (specificKey?: string) => {
-    // Priority: specificKey > env var > globalApiKey
-    let key = specificKey || (import.meta as any).env?.VITE_GEMINI_API_KEY || globalApiKey;
+    let key = specificKey || process.env.GEMINI_API_KEY || globalApiKey || '';
 
     if (!key) {
-        throw new Error("API Key not configured. Set VITE_GEMINI_API_KEY in environment variables.");
+        throw new Error("API Key not configured. Set GEMINI_API_KEY in environment variables.");
     }
 
     return new GoogleGenAI({ apiKey: key });
