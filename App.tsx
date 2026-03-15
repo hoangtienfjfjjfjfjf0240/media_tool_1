@@ -1144,92 +1144,162 @@ export default function App() {
         }
     };
 
+    const handleNewEditChat = () => {
+        setEditMessages([]);
+        setEditChatHistory([]);
+        setEditImageUrl(null);
+        setEditPrompt('');
+        setEditProcessing(false);
+    };
+
     const renderMagicEdit = () => (
         <div className="flex flex-col h-full" tabIndex={0} onPaste={handleEditPaste}>
-            {/* Chat History */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {editMessages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center">
-                        <div className="w-20 h-20 bg-gradient-to-br from-rose-500 to-pink-600 rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-rose-500/20">
-                            <Wand2 size={36} className="text-white" />
+            {/* Chat Area */}
+            <div className="flex-1 overflow-y-auto">
+                <div className="max-w-3xl mx-auto px-4 py-6">
+                    {editMessages.length === 0 ? (
+                        /* Welcome Screen */
+                        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+                            <div className="w-24 h-24 bg-gradient-to-br from-rose-500 to-pink-600 rounded-3xl flex items-center justify-center mb-6 shadow-2xl shadow-rose-500/30">
+                                <Wand2 size={42} className="text-white" />
+                            </div>
+                            <h2 className="text-2xl font-bold text-white mb-3">Magic Edit</h2>
+                            <p className="text-slate-400 text-sm max-w-md mb-8 leading-relaxed">
+                                Upload an image and describe what you want to change.<br />
+                                Or just type to generate images from text.
+                            </p>
+                            <div className="flex gap-3 mb-4">
+                                <button
+                                    onClick={() => editFileRef.current?.click()}
+                                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-2xl font-semibold hover:opacity-90 transition-all shadow-lg hover:shadow-rose-500/30 hover:scale-[1.02]"
+                                >
+                                    <Upload size={18} /> Upload Image
+                                </button>
+                            </div>
+                            <p className="text-slate-500 text-xs">
+                                <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300 font-mono text-[10px]">Ctrl+V</kbd> to paste • Drag & drop supported
+                            </p>
+                            <input ref={editFileRef} type="file" className="hidden" accept="image/*" onChange={handleEditUpload} />
+
+                            {/* Quick prompts */}
+                            <div className="grid grid-cols-2 gap-2 mt-8 max-w-md w-full">
+                                {['🎨 Change style to anime', '🌅 Make it sunset', '✨ Enhance quality', '🏠 Change background'].map(q => (
+                                    <button key={q} onClick={() => { setEditPrompt(q.slice(2).trim()); }} className="text-left px-4 py-3 bg-slate-800/50 hover:bg-slate-700/60 border border-white/5 rounded-xl text-sm text-slate-400 hover:text-white transition-all">
+                                        {q}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                        <h2 className="text-xl font-bold text-white mb-2">Magic Edit</h2>
-                        <p className="text-slate-400 text-sm max-w-md mb-6">Upload an image and describe what you want to change. AI will edit it for you in real-time.</p>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => editFileRef.current?.click()}
-                                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg"
-                            >
-                                <Upload size={18} /> Upload Image
-                            </button>
-                        </div>
-                        <p className="text-slate-500 text-xs mt-4">or press <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300 font-mono text-[10px]">Ctrl+V</kbd> to paste from clipboard</p>
-                        <input ref={editFileRef} type="file" className="hidden" accept="image/*" onChange={handleEditUpload} />
-                    </div>
-                ) : (
-                    <>
-                        {editMessages.map(msg => (
-                            <div key={msg.id} className={`flex w-full mb-2 ${msg.sender === Sender.USER ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[80%] ${msg.sender === Sender.USER ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
-                                    {msg.imageUrl && (
-                                        <div
-                                            className="rounded-xl overflow-hidden border border-white/10 cursor-pointer hover:border-purple-500/50 transition-colors max-w-sm"
-                                            onClick={() => setViewingImage({ url: msg.imageUrl! })}
-                                        >
-                                            <img src={msg.imageUrl} alt="Chat" className="max-h-[300px] object-contain" />
+                    ) : (
+                        /* Chat Messages */
+                        <div className="space-y-6">
+                            {editMessages.map(msg => (
+                                <div key={msg.id} className={`flex gap-3 ${msg.sender === Sender.USER ? 'justify-end' : 'justify-start'}`}>
+                                    {/* AI Avatar */}
+                                    {msg.sender === Sender.AI && (
+                                        <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center mt-1">
+                                            <Sparkles size={14} className="text-white" />
                                         </div>
                                     )}
-                                    <div className={`px-4 py-2.5 rounded-2xl text-sm ${msg.sender === Sender.USER
-                                        ? 'bg-slate-800 text-slate-100 rounded-tr-sm'
-                                        : msg.isError
-                                            ? 'bg-red-500/10 border border-red-500/20 text-red-300 rounded-tl-sm'
-                                            : 'bg-slate-900/80 border border-white/10 text-slate-300 rounded-tl-sm'
-                                        }`}>
-                                        {msg.text}
+
+                                    <div className={`flex flex-col gap-2 ${msg.sender === Sender.USER ? 'items-end max-w-[70%]' : 'items-start max-w-[85%]'}`}>
+                                        {/* Image */}
+                                        {msg.imageUrl && (
+                                            <div
+                                                className="rounded-2xl overflow-hidden border border-white/10 cursor-pointer hover:border-rose-500/40 transition-all group relative"
+                                                onClick={() => setViewingImage({ url: msg.imageUrl! })}
+                                            >
+                                                <img src={msg.imageUrl} alt="" className="max-w-lg max-h-[400px] object-contain" />
+                                                {msg.sender === Sender.AI && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleDownload(msg.imageUrl!, `magic-edit-${Date.now()}.png`); }}
+                                                        className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-black/80 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        title="Download"
+                                                    >
+                                                        <Download size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Text Bubble */}
+                                        {msg.text && (
+                                            <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${msg.sender === Sender.USER
+                                                    ? 'bg-blue-600/80 text-white'
+                                                    : msg.isError
+                                                        ? 'bg-red-500/10 border border-red-500/20 text-red-300'
+                                                        : 'bg-slate-800/80 text-slate-200'
+                                                }`}>
+                                                {msg.text}
+                                            </div>
+                                        )}
                                     </div>
-                                    <span className="text-[10px] text-slate-600 px-1">
-                                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
                                 </div>
-                            </div>
-                        ))}
-                        <div ref={messagesEndRef} />
-                    </>
-                )}
+                            ))}
+
+                            {/* Typing Indicator */}
+                            {editProcessing && (
+                                <div className="flex gap-3 items-start">
+                                    <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center">
+                                        <Sparkles size={14} className="text-white" />
+                                    </div>
+                                    <div className="px-4 py-3 bg-slate-800/80 rounded-2xl">
+                                        <div className="flex gap-1.5">
+                                            <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                            <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                            <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div ref={messagesEndRef} />
+                        </div>
+                    )}
+                </div>
             </div>
 
-            {/* Input Bar */}
-            {editMessages.length > 0 && (
-                <div className="shrink-0 border-t border-white/5 p-4" style={{ background: 'rgba(10,10,18,0.9)' }}>
-                    <div className="flex items-center gap-3">
+            {/* Input Bar — Always Visible */}
+            <div className="shrink-0 border-t border-white/5" style={{ background: 'rgba(10,10,18,0.95)' }}>
+                <div className="max-w-3xl mx-auto px-4 py-3">
+                    <div className="flex items-center gap-2">
+                        {editMessages.length > 0 && (
+                            <button
+                                onClick={handleNewEditChat}
+                                className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all shrink-0"
+                                title="New chat"
+                            >
+                                <RotateCcw size={16} />
+                            </button>
+                        )}
                         <button
                             onClick={() => editFileRef.current?.click()}
-                            className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all shrink-0"
-                            title="Upload new image"
+                            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all shrink-0"
+                            title="Upload image"
                         >
-                            <ImagePlus size={18} />
+                            <ImagePlus size={16} />
                         </button>
                         <input ref={editFileRef} type="file" className="hidden" accept="image/*" onChange={handleEditUpload} />
                         <input
                             type="text"
                             value={editPrompt}
                             onChange={e => setEditPrompt(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleEditSend()}
-                            placeholder="Describe your edit... (e.g. 'change sky to sunset')"
-                            className="flex-1 bg-slate-800/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 outline-none"
+                            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleEditSend()}
+                            placeholder={editMessages.length === 0 ? "Describe what to create or upload an image to edit..." : "Describe your edit..."}
+                            className="flex-1 bg-slate-800/60 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/20 outline-none"
                             disabled={editProcessing}
                             onPaste={handleEditPaste}
                         />
                         <button
                             onClick={handleEditSend}
                             disabled={editProcessing || !editPrompt.trim()}
-                            className="p-3 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl hover:opacity-90 transition-all disabled:opacity-30 shrink-0"
+                            className="p-2.5 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl hover:opacity-90 transition-all disabled:opacity-30 shrink-0"
                         >
-                            {editProcessing ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                            {editProcessing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                         </button>
                     </div>
                 </div>
-            )}
+            </div>
         </div>
     );
 

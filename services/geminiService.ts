@@ -246,47 +246,61 @@ export const magicEditChat = async (
 ): Promise<{ text: string; imageBase64?: string }> => {
     const ai = getAI();
 
-    // Build multi-turn contents array
-    const contents: any[] = [];
+    // SMART HISTORY: Only send the MOST RECENT image to avoid 400 payload errors.
+    // Send text from all turns for context, but only 1 image (the latest source).
+    const parts: any[] = [];
 
-    for (const turn of history) {
-        const parts: any[] = [];
-        if (turn.imageDataUrl) {
-            const optimized = await processImageForGemini(turn.imageDataUrl);
-            parts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
-        }
-        if (turn.text) {
-            parts.push({ text: turn.text });
-        }
-        if (parts.length > 0) {
-            contents.push({ role: turn.role, parts });
+    // Find the last image in history (could be user upload or AI result)
+    let lastImageUrl: string | undefined;
+    for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i].imageDataUrl) {
+            lastImageUrl = history[i].imageDataUrl;
+            break;
         }
     }
 
-    // Add the new user message
-    const newParts: any[] = [];
-    if (newImageDataUrl) {
-        const optimized = await processImageForGemini(newImageDataUrl);
-        newParts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
+    // If user is sending a new image, use that instead
+    const sourceImage = newImageDataUrl || lastImageUrl;
+
+    // Include source image first
+    if (sourceImage) {
+        const optimized = await processImageForGemini(sourceImage);
+        parts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
     }
-    newParts.push({ text: newMessage });
-    contents.push({ role: 'user', parts: newParts });
+
+    // Build text context from recent history (last 6 turns max for context)
+    const recentHistory = history.slice(-6);
+    const contextLines = recentHistory
+        .filter(t => t.text)
+        .map(t => `${t.role === 'user' ? 'User' : 'AI'}: ${t.text}`)
+        .join('\n');
+
+    // Combine context + new message
+    let fullPrompt = newMessage;
+    if (contextLines) {
+        fullPrompt = `Previous conversation:\n${contextLines}\n\nNew request: ${newMessage}`;
+    }
+    parts.push({ text: fullPrompt });
 
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-image-preview',
-            contents,
+            contents: { role: 'user', parts },
             config: {
-                systemInstruction: `You are Magic Edit — a creative AI image editor. You can:
-• Edit images the user sends based on their instructions
-• Generate new images from text descriptions
-• Answer questions about images
-• Apply style changes, add/remove elements, recolor, transform
+                systemInstruction: `You are Magic Edit — a creative AI image editor and assistant.
 
-When editing, preserve the original composition unless asked to change it.
-Always respond helpfully. If the user sends an image with instructions, edit it and return the result.
-If the user asks a text question, answer it naturally.
-Be concise in text responses. Let the images do the talking.`,
+CAPABILITIES:
+• Edit images based on user instructions (style changes, object edits, color changes, etc.)
+• Generate new images from text descriptions
+• Answer questions about images or creative topics
+• Apply multiple sequential edits — check the conversation context for previous instructions
+
+RULES:
+• When editing an image, preserve the original composition unless explicitly asked to change it
+• If an image is provided with instructions, edit it and return the modified image
+• If no image is provided, generate a new image or answer the text question
+• Be concise in text responses — let the images speak
+• If the edit fails or is unclear, explain what went wrong briefly`,
                 imageConfig: { imageSize: "1K" }
             }
         });
