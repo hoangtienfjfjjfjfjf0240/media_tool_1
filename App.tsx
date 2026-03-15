@@ -1336,10 +1336,13 @@ export default function App() {
                             value={editPrompt}
                             onChange={e => setEditPrompt(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleEditSend()}
-                            placeholder={editMessages.length === 0 ? "Describe what to create or upload an image to edit..." : "Describe your edit..."}
+                            placeholder={editMessages.length === 0 ? "Type or drop image here..." : "Describe your edit or drop image..."}
                             className="flex-1 bg-slate-800/60 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/20 outline-none"
                             disabled={editProcessing}
                             onPaste={handleEditPaste}
+                            autoFocus
+                            onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                            onDrop={handleEditDrop}
                         />
                         <button
                             onClick={handleEditSend}
