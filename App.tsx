@@ -1097,8 +1097,30 @@ export default function App() {
         }
     };
 
+    const handleEditPaste = (e: React.ClipboardEvent) => {
+        const items = e.clipboardData.items;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                const file = items[i].getAsFile();
+                if (file) {
+                    e.preventDefault();
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const res = reader.result as string;
+                        setEditImageUrl(res);
+                        setEditMessages(prev => [...prev, {
+                            id: Date.now().toString(), sender: Sender.USER, text: 'Pasted image for editing.', imageUrl: res, timestamp: Date.now()
+                        }]);
+                    };
+                    reader.readAsDataURL(file);
+                    break;
+                }
+            }
+        }
+    };
+
     const renderMagicEdit = () => (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full" tabIndex={0} onPaste={handleEditPaste}>
             {/* Chat History */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 {editMessages.length === 0 ? (
@@ -1108,18 +1130,43 @@ export default function App() {
                         </div>
                         <h2 className="text-xl font-bold text-white mb-2">Magic Edit</h2>
                         <p className="text-slate-400 text-sm max-w-md mb-6">Upload an image and describe what you want to change. AI will edit it for you in real-time.</p>
-                        <button
-                            onClick={() => editFileRef.current?.click()}
-                            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg"
-                        >
-                            <Upload size={18} /> Upload Image to Edit
-                        </button>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => editFileRef.current?.click()}
+                                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-rose-600 to-pink-600 text-white rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg"
+                            >
+                                <Upload size={18} /> Upload Image
+                            </button>
+                        </div>
+                        <p className="text-slate-500 text-xs mt-4">or press <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300 font-mono text-[10px]">Ctrl+V</kbd> to paste from clipboard</p>
                         <input ref={editFileRef} type="file" className="hidden" accept="image/*" onChange={handleEditUpload} />
                     </div>
                 ) : (
                     <>
                         {editMessages.map(msg => (
-                            <ChatMessage key={msg.id} message={msg} />
+                            <div key={msg.id} className={`flex w-full mb-2 ${msg.sender === Sender.USER ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[80%] ${msg.sender === Sender.USER ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+                                    {msg.imageUrl && (
+                                        <div
+                                            className="rounded-xl overflow-hidden border border-white/10 cursor-pointer hover:border-purple-500/50 transition-colors max-w-sm"
+                                            onClick={() => setViewingImage({ url: msg.imageUrl! })}
+                                        >
+                                            <img src={msg.imageUrl} alt="Chat" className="max-h-[300px] object-contain" />
+                                        </div>
+                                    )}
+                                    <div className={`px-4 py-2.5 rounded-2xl text-sm ${msg.sender === Sender.USER
+                                            ? 'bg-slate-800 text-slate-100 rounded-tr-sm'
+                                            : msg.isError
+                                                ? 'bg-red-500/10 border border-red-500/20 text-red-300 rounded-tl-sm'
+                                                : 'bg-slate-900/80 border border-white/10 text-slate-300 rounded-tl-sm'
+                                        }`}>
+                                        {msg.text}
+                                    </div>
+                                    <span className="text-[10px] text-slate-600 px-1">
+                                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                </div>
+                            </div>
                         ))}
                         <div ref={messagesEndRef} />
                     </>
@@ -1146,6 +1193,7 @@ export default function App() {
                             placeholder="Describe your edit... (e.g. 'change sky to sunset')"
                             className="flex-1 bg-slate-800/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 outline-none"
                             disabled={editProcessing}
+                            onPaste={handleEditPaste}
                         />
                         <button
                             onClick={handleEditSend}
