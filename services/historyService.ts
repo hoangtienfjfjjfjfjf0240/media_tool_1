@@ -151,6 +151,27 @@ export const fetchUserHistory = async (userId: string): Promise<HistoryItem[]> =
       .limit(50);
 
     if (!error && data && data.length > 0) {
+      // Auto-delete if more than 10 items
+      if (data.length > 10) {
+        const toKeep = data.slice(0, 10);
+        const toDelete = data.slice(10);
+
+        // Delete old storage files and DB rows
+        for (const item of toDelete) {
+          try {
+            // Extract file path from URL for storage deletion
+            if (item.file_url) {
+              const urlParts = item.file_url.split('/generated/');
+              if (urlParts[1]) {
+                await supabase.storage.from('generated').remove([urlParts[1]]);
+              }
+            }
+            await supabase.from('history').delete().eq('id', item.id);
+          } catch (e) { console.warn('Auto-delete failed for item:', item.id, e); }
+        }
+
+        return toKeep as HistoryItem[];
+      }
       return data as HistoryItem[];
     }
   }

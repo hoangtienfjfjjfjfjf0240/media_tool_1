@@ -1507,10 +1507,7 @@ export default function App() {
                                             <p className="text-[10px] text-slate-500 text-center">Sign in to sync history to cloud.</p>
                                         </>
                                     ) : (
-                                        <>
-                                            <input type="text" value={loginName} onChange={e => setLoginName(e.target.value)} placeholder="Enter display name..." className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-white focus:border-purple-500 outline-none" />
-                                            <button onClick={() => { if (loginName.trim()) handleLoginUser(loginName) }} disabled={!loginName.trim()} className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50"><LogIn size={16} /> Quick Login</button>
-                                        </>
+                                        <p className="text-xs text-slate-500 text-center">Authentication not configured.</p>
                                     )}
                                 </div>
                             )}
