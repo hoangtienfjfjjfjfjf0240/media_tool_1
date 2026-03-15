@@ -8,21 +8,13 @@ export const setGlobalApiKey = (key: string) => {
 };
 
 const getAI = (specificKey?: string) => {
-    let key = specificKey || globalApiKey;
+    // Priority: specificKey > env var > globalApiKey
+    let key = specificKey || (import.meta as any).env?.VITE_GEMINI_API_KEY || globalApiKey;
 
     if (!key) {
-        try {
-            if (typeof process !== 'undefined' && process.env) {
-                key = process.env.API_KEY || '';
-            }
-        } catch (e) {
-            console.warn("Error accessing process.env", e);
-        }
+        throw new Error("API Key not configured. Set VITE_GEMINI_API_KEY in environment variables.");
     }
 
-    if (!key) {
-        throw new Error("API Key not found. Please enter it in Settings or ensure process.env.API_KEY is set.");
-    }
     return new GoogleGenAI({ apiKey: key });
 };
 

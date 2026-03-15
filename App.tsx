@@ -26,7 +26,7 @@ export default function App() {
     const [user, setUser] = useState<SimpleUser | null>(null);
     const [mode, setMode] = useState<AppMode>(AppMode.BATCH_STUDIO);
     const [showSettings, setShowSettings] = useState(false);
-    const [apiKey, setApiKey] = useState('');
+
     const [loginName, setLoginName] = useState('');
     const [authEmail, setAuthEmail] = useState('');
     const [authPassword, setAuthPassword] = useState('');
@@ -104,9 +104,6 @@ export default function App() {
     const localizeInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        const storedKey = localStorage.getItem('gemini_api_key');
-        if (storedKey) { setApiKey(storedKey); setGlobalApiKey(storedKey); }
-
         // Supabase auth listener
         if (isSupabaseConfigured) {
             supabase.auth.getSession().then(({ data: { session } }) => {
@@ -183,7 +180,7 @@ export default function App() {
         localStorage.removeItem('simple_user_data');
         setUser(null);
     };
-    const handleSaveSettings = () => { if (apiKey.trim()) { localStorage.setItem('gemini_api_key', apiKey); setGlobalApiKey(apiKey); } setShowSettings(false); };
+    const handleSaveSettings = () => { setShowSettings(false); };
     const handleReloadUI = () => window.location.reload();
 
     const handleDownload = (dataUrl: string, filename: string) => {
@@ -1518,12 +1515,7 @@ export default function App() {
                                 </div>
                             )}
                         </div>
-                        <div className="mb-6">
-                            <h3 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2"><Key size={14} /> AI Configuration</h3>
-                            <label className="block text-xs text-slate-400 mb-1">Gemini API Key</label>
-                            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Paste your API key..." className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-white focus:border-purple-500 outline-none" />
-                            <p className="text-[10px] text-slate-600 mt-2">Stored locally in your browser — never sent to any server.</p>
-                        </div>
+
                         <button onClick={handleSaveSettings} className="w-full py-2.5 text-white rounded-lg font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition-all" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>Save Changes</button>
                     </div>
                 </div>
