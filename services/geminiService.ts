@@ -237,46 +237,58 @@ export const magicEditChat = async (
 ): Promise<{ text: string; imageBase64?: string }> => {
     const ai = getAI();
 
-    // SMART HISTORY: Only send the MOST RECENT image to avoid 400 payload errors.
-    // Send text from all turns for context, but only 1 image (the latest source).
-    const parts: any[] = [];
+    // Build proper multi-turn contents for Gemini
+    // Send up to 3 most recent images from history + text context from last 8 turns
+    const contents: any[] = [];
+    const recentHistory = history.slice(-8);
 
-    // Find the last image in history (could be user upload or AI result)
-    let lastImageUrl: string | undefined;
-    for (let i = history.length - 1; i >= 0; i--) {
-        if (history[i].imageDataUrl) {
-            lastImageUrl = history[i].imageDataUrl;
-            break;
+    // Collect up to 3 most recent images (for style reference memory)
+    const MAX_IMAGES = 3;
+    const imageIndices: number[] = [];
+    for (let i = recentHistory.length - 1; i >= 0 && imageIndices.length < MAX_IMAGES; i--) {
+        if (recentHistory[i].imageDataUrl) {
+            imageIndices.unshift(i); // keep order
         }
     }
 
-    // If user is sending a new image, use that instead
-    const sourceImage = newImageDataUrl || lastImageUrl;
+    // Build conversation turns
+    for (let i = 0; i < recentHistory.length; i++) {
+        const turn = recentHistory[i];
+        const parts: any[] = [];
 
-    // Include source image first
-    if (sourceImage) {
-        const optimized = await processImageForGemini(sourceImage);
-        parts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
+        // Include image if it's one of the 3 most recent images
+        if (turn.imageDataUrl && imageIndices.includes(i)) {
+            try {
+                const optimized = await processImageForGemini(turn.imageDataUrl);
+                parts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
+            } catch (e) {
+                console.warn('Failed to process history image, skipping');
+            }
+        }
+
+        // Include text
+        if (turn.text) {
+            parts.push({ text: turn.text });
+        }
+
+        if (parts.length > 0) {
+            contents.push({ role: turn.role, parts });
+        }
     }
 
-    // Build text context from recent history (last 6 turns max for context)
-    const recentHistory = history.slice(-6);
-    const contextLines = recentHistory
-        .filter(t => t.text)
-        .map(t => `${t.role === 'user' ? 'User' : 'AI'}: ${t.text}`)
-        .join('\n');
-
-    // Combine context + new message
-    let fullPrompt = newMessage;
-    if (contextLines) {
-        fullPrompt = `Previous conversation:\n${contextLines}\n\nNew request: ${newMessage}`;
+    // Add new user message
+    const newParts: any[] = [];
+    if (newImageDataUrl) {
+        const optimized = await processImageForGemini(newImageDataUrl);
+        newParts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
     }
-    parts.push({ text: fullPrompt });
+    newParts.push({ text: newMessage });
+    contents.push({ role: 'user', parts: newParts });
 
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-image-preview',
-            contents: { role: 'user', parts },
+            contents: contents,
             config: {
                 systemInstruction: `You are Magic Edit — a creative AI image editor and assistant.
 
@@ -284,12 +296,14 @@ CAPABILITIES:
 • Edit images based on user instructions (style changes, object edits, color changes, etc.)
 • Generate new images from text descriptions
 • Answer questions about images or creative topics
-• Apply multiple sequential edits — check the conversation context for previous instructions
+• Apply style from one image to another when given multiple images
+• Remember and reference ALL images from the conversation — users may ask you to combine styles or elements from different images shared earlier
 
 RULES:
 • When editing an image, preserve the original composition unless explicitly asked to change it
 • If an image is provided with instructions, edit it and return the modified image
 • If no image is provided, generate a new image or answer the text question
+• When user references "previous image" or "the first image", look at earlier images in the conversation
 • Be concise in text responses — let the images speak
 • If the edit fails or is unclear, explain what went wrong briefly`,
                 imageConfig: { imageSize: "1K" }
