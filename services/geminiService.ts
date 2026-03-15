@@ -232,6 +232,85 @@ export const editImage = async (
     }
 };
 
+// --- MAGIC EDIT CHAT (Multi-turn Gemini-style conversation with images) ---
+export interface ChatTurn {
+    role: 'user' | 'model';
+    text?: string;
+    imageDataUrl?: string; // data:image/...;base64,...
+}
+
+export const magicEditChat = async (
+    history: ChatTurn[],
+    newMessage: string,
+    newImageDataUrl?: string
+): Promise<{ text: string; imageBase64?: string }> => {
+    const ai = getAI();
+
+    // Build multi-turn contents array
+    const contents: any[] = [];
+
+    for (const turn of history) {
+        const parts: any[] = [];
+        if (turn.imageDataUrl) {
+            const optimized = await processImageForGemini(turn.imageDataUrl);
+            parts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
+        }
+        if (turn.text) {
+            parts.push({ text: turn.text });
+        }
+        if (parts.length > 0) {
+            contents.push({ role: turn.role, parts });
+        }
+    }
+
+    // Add the new user message
+    const newParts: any[] = [];
+    if (newImageDataUrl) {
+        const optimized = await processImageForGemini(newImageDataUrl);
+        newParts.push({ inlineData: { data: cleanBase64(optimized), mimeType: getMimeType(optimized) } });
+    }
+    newParts.push({ text: newMessage });
+    contents.push({ role: 'user', parts: newParts });
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-image-preview',
+            contents,
+            config: {
+                systemInstruction: `You are Magic Edit — a creative AI image editor. You can:
+• Edit images the user sends based on their instructions
+• Generate new images from text descriptions
+• Answer questions about images
+• Apply style changes, add/remove elements, recolor, transform
+
+When editing, preserve the original composition unless asked to change it.
+Always respond helpfully. If the user sends an image with instructions, edit it and return the result.
+If the user asks a text question, answer it naturally.
+Be concise in text responses. Let the images do the talking.`,
+                imageConfig: { imageSize: "1K" }
+            }
+        });
+
+        let resultText = "";
+        let resultImageBase64: string | undefined;
+
+        if (response.candidates && response.candidates[0]?.content?.parts) {
+            for (const part of response.candidates[0].content.parts) {
+                if (part.text) {
+                    resultText += part.text;
+                } else if (part.inlineData) {
+                    resultImageBase64 = part.inlineData.data;
+                }
+            }
+        }
+
+        return { text: resultText, imageBase64: resultImageBase64 };
+    } catch (error: any) {
+        console.error("Magic Edit Chat Error:", error.message || error);
+        throw handleApiError(error);
+    }
+};
+
 // --- SEARCH GROUNDING (Gemini 2.5 Flash) ---
 export const searchGrounding = async (query: string) => {
     const ai = getAI();

@@ -6,7 +6,7 @@ import { ChatMessage } from './components/ChatMessage';
 
 import { EditImageModal } from './components/EditImageModal';
 import { AppMode, AspectRatio, BatchItem, BatchModel, BatchSubMode, HistoryItem, MockupType, TargetLanguage, ImageJob, GenderOption, Message, Sender } from './types';
-import { editImage, generatePromptSuggestions, generateBatchVariation, setGlobalApiKey, localizeImage, checkSpelling, generateDistinctPrompts } from './services/geminiService';
+import { editImage, generatePromptSuggestions, generateBatchVariation, setGlobalApiKey, localizeImage, checkSpelling, generateDistinctPrompts, magicEditChat, ChatTurn } from './services/geminiService';
 import { isSupabaseConfigured, supabase } from './services/supabaseClient';
 import { signInWithEmail, signUpWithEmail, signOut } from './services/authService';
 import { uploadAndSaveHistory, fetchUserHistory } from './services/historyService';
@@ -87,6 +87,7 @@ export default function App() {
     const [editImageUrl, setEditImageUrl] = useState<string | null>(null);
     const [editPrompt, setEditPrompt] = useState('');
     const [editProcessing, setEditProcessing] = useState(false);
+    const [editChatHistory, setEditChatHistory] = useState<ChatTurn[]>([]);
     const editFileRef = useRef<HTMLInputElement>(null);
 
     const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
@@ -1059,28 +1060,43 @@ export default function App() {
         )
     };
 
-    // Magic Edit — Send Message
+    // Magic Edit — Send Message (Multi-turn Gemini-style)
     const handleEditSend = async () => {
         if (!editPrompt.trim() || editProcessing) return;
-        const userMsg: Message = { id: Date.now().toString(), sender: Sender.USER, text: editPrompt, timestamp: Date.now() };
-        setEditMessages(prev => [...prev, userMsg]);
         const currentPrompt = editPrompt;
+        const userMsg: Message = { id: Date.now().toString(), sender: Sender.USER, text: currentPrompt, timestamp: Date.now() };
+        setEditMessages(prev => [...prev, userMsg]);
         setEditPrompt('');
         setEditProcessing(true);
+
         try {
-            const lastAiImage = [...editMessages].reverse().find(m => m.sender === Sender.AI && m.imageUrl)?.imageUrl;
-            const sourceImage = lastAiImage || editImageUrl;
-            if (!sourceImage) { setEditMessages(prev => [...prev, { id: Date.now().toString(), sender: Sender.AI, text: 'Please upload an image first.', isError: true, timestamp: Date.now() }]); setEditProcessing(false); return; }
-            const result = await editImage(sourceImage, currentPrompt);
-            if (result) {
-                setEditMessages(prev => [...prev, { id: Date.now().toString(), sender: Sender.AI, text: '✨ Edit applied!', imageUrl: result, timestamp: Date.now() }]);
-            } else {
-                setEditMessages(prev => [...prev, { id: Date.now().toString(), sender: Sender.AI, text: 'Failed to generate edit. Try a different prompt.', isError: true, timestamp: Date.now() }]);
-            }
+            // Call magicEditChat with full conversation history
+            const result = await magicEditChat(editChatHistory, currentPrompt);
+
+            // Build AI response message
+            const aiMsg: Message = {
+                id: (Date.now() + 1).toString(),
+                sender: Sender.AI,
+                text: result.text || (result.imageBase64 ? '✨ Here you go!' : 'Done.'),
+                imageUrl: result.imageBase64 ? `data:image/png;base64,${result.imageBase64}` : undefined,
+                timestamp: Date.now()
+            };
+            setEditMessages(prev => [...prev, aiMsg]);
+
+            // Update chat history for multi-turn context
+            setEditChatHistory(prev => [
+                ...prev,
+                { role: 'user' as const, text: currentPrompt },
+                { role: 'model' as const, text: result.text || '', imageDataUrl: aiMsg.imageUrl }
+            ]);
         } catch (err: any) {
-            setEditMessages(prev => [...prev, { id: Date.now().toString(), sender: Sender.AI, text: `Error: ${err.message || 'Unknown error'}`, isError: true, timestamp: Date.now() }]);
+            setEditMessages(prev => [...prev, {
+                id: Date.now().toString(), sender: Sender.AI,
+                text: `Error: ${err.message || 'Unknown error'}`, isError: true, timestamp: Date.now()
+            }]);
         }
         setEditProcessing(false);
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     };
 
     const handleEditUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1090,8 +1106,10 @@ export default function App() {
                 const res = reader.result as string;
                 setEditImageUrl(res);
                 setEditMessages(prev => [...prev, {
-                    id: Date.now().toString(), sender: Sender.USER, text: 'Uploaded an image for editing.', imageUrl: res, timestamp: Date.now()
+                    id: Date.now().toString(), sender: Sender.USER, text: '📷 Uploaded an image', imageUrl: res, timestamp: Date.now()
                 }]);
+                // Track in chat history so Gemini sees the image
+                setEditChatHistory(prev => [...prev, { role: 'user' as const, text: 'Here is an image for you to work with.', imageDataUrl: res }]);
             };
             reader.readAsDataURL(e.target.files[0]);
         }
@@ -1109,8 +1127,9 @@ export default function App() {
                         const res = reader.result as string;
                         setEditImageUrl(res);
                         setEditMessages(prev => [...prev, {
-                            id: Date.now().toString(), sender: Sender.USER, text: 'Pasted image for editing.', imageUrl: res, timestamp: Date.now()
+                            id: Date.now().toString(), sender: Sender.USER, text: '📋 Pasted image', imageUrl: res, timestamp: Date.now()
                         }]);
+                        setEditChatHistory(prev => [...prev, { role: 'user' as const, text: 'Here is a pasted image for you to work with.', imageDataUrl: res }]);
                     };
                     reader.readAsDataURL(file);
                     break;
@@ -1155,10 +1174,10 @@ export default function App() {
                                         </div>
                                     )}
                                     <div className={`px-4 py-2.5 rounded-2xl text-sm ${msg.sender === Sender.USER
-                                            ? 'bg-slate-800 text-slate-100 rounded-tr-sm'
-                                            : msg.isError
-                                                ? 'bg-red-500/10 border border-red-500/20 text-red-300 rounded-tl-sm'
-                                                : 'bg-slate-900/80 border border-white/10 text-slate-300 rounded-tl-sm'
+                                        ? 'bg-slate-800 text-slate-100 rounded-tr-sm'
+                                        : msg.isError
+                                            ? 'bg-red-500/10 border border-red-500/20 text-red-300 rounded-tl-sm'
+                                            : 'bg-slate-900/80 border border-white/10 text-slate-300 rounded-tl-sm'
                                         }`}>
                                         {msg.text}
                                     </div>
